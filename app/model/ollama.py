@@ -163,8 +163,32 @@ class Llama3_8B(OllamaModel):
         super().__init__("llama3")
         self.note = "Llama3 8B model."
 
-
 class Llama3_70B(OllamaModel):
     def __init__(self):
         super().__init__("llama3:70b")
         self.note = "Llama3 70B model."
+
+class Llama3_1_8B(OllamaModel):
+    def __init__(self):
+        super().__init__("llama3.1")
+        self.note = "Llama3.1 8B model."
+
+class Llama3_1_70B(OllamaModel):
+    def __init__(self):
+        super().__init__("llama3.1:70b")
+        self.note = "Llama3.1 70B model."
+
+class Llama3_1_405B(OllamaModel):
+    def __init__(self):
+        super().__init__("llama3.1:405b")
+        self.note = "Llama3.1:405B model."
+
+class DeepSeekCoder_V2_16B(OllamaModel):
+    def __init__(self):
+        super().__init__("deepseek-coder-v2")
+        self.note = "Deep-seek-coder-v2:16b model."
+
+class DeepSeekCoder_V2_236B(OllamaModel):
+    def __init__(self):
+        super().__init__("deepseek-coder-v2:236b")
+        self.note = "Deep-seek-coder-v2:236b model."

@@ -201,7 +201,7 @@ def add_task_related_args(parser: ArgumentParser) -> None:
         "--model",
         type=model_parser,
         default="gpt-3.5-turbo-0125",
-        help="The model to use. Currently only OpenAI models are supported.",
+        help=f"The model to use. Available models: {', '.join(common.MODEL_HUB.keys())}"
     )
     parser.add_argument(
         "--model-temperature",
