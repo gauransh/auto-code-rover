@@ -14,11 +14,107 @@ from app.analysis import sbfl
 from app.analysis.sbfl import NoCoverageData
 from app.api import agent_proxy, agent_write_locations, agent_write_patch
 from app.data_structures import FunctionCallIntent, MessageThread
-from app.log import log_exception
+from app.log import log_exception, print_acr
 from app.search.search_manage import SearchManager
 
 # from app.api.python.validation import PythonValidator
 from app.task import Task
+from string import Template
+from app.model import common
+
+GEN_ONE_NO_REF_SIMPLE= Template("""
+You are provided with the following Python function stub and docstring for ${entrypoint}. 
+You want to ensure that when the function is implemented, it complies with the specification given in the docstring:
+${codeStubAndDocstring}
+
+Your task is to write a ${toGenerateFull} for ${entrypoint}. The ${toGenerateShort} should be in Python and consist of exactly one assert statement. 
+A Python comment explaining the ${toGenerateShort}'s meaning should precede it.
+
+For variables, the ${toGenerateShort} should only use the input parameters defined in the function stub and a hypothetical return value of the function, 
+which we'll assume is stored in a variable `return_value`. For string manipulation, Python's re (regular expressions) library can be used. 
+If other Python standard library functions are necessary, include the corresponding imports. However, refrain from using external libraries or 
+calling the function itself (in this case, ${entrypoint}) within the ${toGenerateShort}.
+
+If the ${toGenerateShort} calls any functions, they should only be those from the functional subset of Python. By this, we mean functions that are pure 
+(i.e., no side effects, depends only on input values) such as `all()`, `len()`, `map()`, `filter()`, etc.
+
+Although the ${toGenerateShort} should be less computationally complex than the function itself and relatively simple, it should not be trivial. 
+It should encapsulate an aspect of the function output specification without implementing the function itself and should be easily readable by a human.
+
+While not trivial, your ${toGenerateShort} should still be very simple and short. It should be a single line of code that is not too long, and it should capture 
+only one aspect of the function's behavior, not all of it. 
+
+For example, if the goal of the function were to sort a list, you might write a ${toGenerateShort} that checks that the elements in the list are in sorted order, 
+or you might write a ${toGenerateShort} that checks that the list is the same length as the input list. You would not write a ${toGenerateShort} that checks both of these things.
+
+The format of your response should be:
+# Comment explaining what aspect of the function the ${toGenerateFull} checks
+CODE FOR EXACTLY FIVE ${toGenerateShortCaps} USING ASSERT GOES HERE
+
+The ${toGenerateShort} should hold true whenever the function ${entrypoint} executes successfully as specified in the docstring, regardless of the eventual internal implementation of the function.
+""")
+
+POST_COND_TO_USE = Template("For variables, only use the function inputs and the return value of the function. You can use python's re (regular expressions) if needed to deal with strings. Do not call ${entrypoint} itself in the postcondition. Instead, assume that the function has already been called and its return value is available in a variable called `return_value` that you can use. In the postcondition, only use functions that are part of the functional subset of python (e.g., all(), len(), map(), filter(), etc.)")
+
+
+class PostconditionGenerator:
+    def __init__(self, function_name, description, file_context=None, signature=None, implementation=None, comments=None, pull_request_info=None):
+        self.function_name = function_name
+        self.description = description
+        self.file_context = file_context
+        self.signature = signature
+        self.implementation = implementation
+        self.comments = comments
+        self.pull_request_info = pull_request_info
+
+    def generate_postcondition(self):
+        context = {
+            'entrypoint': self.function_name,
+            'codeStubAndDocstring': self.description,
+            'toGenerateFull': 'postcondition',
+            'toGenerateShort': 'postcondition',
+            'toGenerateShortCaps': 'POSTCONDITION',
+            'toGenerateGoal': 'does',
+            'promptAdds': '',
+            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=self.function_name)
+        }
+
+        if self.pull_request_info:
+            context['promptAdds'] = f"""
+            Pull Request Body: {self.pull_request_info['pr_body']}
+            Pull Request Code Diff: {self.pull_request_info['diff']}
+            Pull Request Commits: {self.pull_request_info['commits']}
+            Pull Request Additions: {self.pull_request_info['additions']}
+            Pull Request Deletions: {self.pull_request_info['deletions']}
+            Pull Request Changed Files: {self.pull_request_info['changed_files']}
+            """
+            context['codeStubAndDocstring'] += context['promptAdds']
+
+        if self.file_context:
+            context['codeStubAndDocstring'] += f"\nFile context: {self.file_context}"
+        if self.signature:
+            context['codeStubAndDocstring'] += f"\n{self.function_name} signature: {self.signature}"
+        if self.implementation:
+            context['codeStubAndDocstring'] += f"\nFunction implementation: {self.implementation}"
+        if self.comments:
+            context['codeStubAndDocstring'] += f"\nComments from users: {self.comments}"
+
+        prompt = GEN_ONE_NO_REF_SIMPLE.safe_substitute(context)
+        print_acr(f"Constructed prompt for postcondition generation: {prompt}")
+
+        SYSTEM_PROMPT = """You are a helpful assistant that generates **symbolic** postcondition a text into json format."""
+
+        msg_thread = MessageThread()
+        msg_thread.add_system(SYSTEM_PROMPT)
+        msg_thread.add_user(prompt)
+        res_text, *_ = common.SELECTED_MODEL.call(msg_thread.to_msg(), response_format="json_object")
+        if res_text:
+            output = res_text.strip().split('\n') # Split the string into a list of assertions
+            print_acr(f"Successfully generated postcondition from API\n {output}")
+            return output
+        else:
+            print_acr("API returned no content for postcondition generation.")
+        return ["No valid response from API."]
 
 
 class ProjectApiManager:
@@ -35,6 +131,109 @@ class ProjectApiManager:
         "search_code_in_file",
         "write_patch",
     ]
+
+    
+    def generate_postcondition_(self, description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
+        generator = PostconditionGenerator(function_name, description, file_context, signature, implementation, comments, pull_request_info)
+        return generator.generate_postcondition()
+
+    def generate_postcondition(description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
+        context = {
+            'entrypoint': function_name or 'the function',
+            'codeStubAndDocstring': description or '',
+            'toGenerateFull': 'postcondition',
+            'toGenerateShort': 'postcondition',
+            'toGenerateShortCaps': 'POSTCONDITION',
+            'toGenerateGoal': 'does',
+            'promptAdds': '',
+            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=function_name or 'the function')
+        }
+
+        if only_pr and pull_request_info:
+            context['codeStubAndDocstring'] += f"""
+                            Pull Request Body: {pull_request_info['pr_body']}
+                            Pull Request Code Diff: {pull_request_info['diff']}
+                            Pull Request Commits: {pull_request_info['commits']}
+                            Pull Request Additions: {pull_request_info['additions']}
+                            Pull Request Deletions: {pull_request_info['deletions']}
+                            Pull Request Changed Files: {pull_request_info['changed_files']}
+                            """
+            prompt = GEN_ONE_NO_REF_SIMPLE.safe_substitute(context)
+            print_acr(f"Prompt looks like: {prompt}")
+        else:
+            if pull_request_info:
+                context['promptAdds'] = f"""
+                Pull Request Body: {pull_request_info['pr_body']}
+                Pull Request Code Diff: {pull_request_info['diff']}
+                Pull Request Commits: {pull_request_info['commits']}
+                Pull Request Additions: {pull_request_info['additions']}
+                Pull Request Deletions: {pull_request_info['deletions']}
+                Pull Request Changed Files: {pull_request_info['changed_files']}
+                """
+                context['codeStubAndDocstring'] = str(context['codeStubAndDocstring']) + context['promptAdds']
+
+            if file_context:
+                context['codeStubAndDocstring'] += f"\nFile context: {file_context}"
+            if signature:
+                context['codeStubAndDocstring'] += f"\n{function_name} signature: {signature}"
+            if implementation:
+                context['codeStubAndDocstring'] += f"\nFunction implementation: {implementation}"
+            if comments:
+                context['codeStubAndDocstring'] += f"\nComments from users: {comments}"
+
+            prompt = GEN_ONE_NO_REF_SIMPLE.safe_substitute(context)
+            print_acr(f"Constructed prompt for postcondition generation: {prompt}")
+        SYSTEM_PROMPT = """You are a helpful assistant that generates **symbolic** postcondition a text into json format."""
+
+        msg_thread = MessageThread()
+        msg_thread.add_system(SYSTEM_PROMPT)
+        msg_thread.add_user(prompt)
+        res_text, *_ = common.SELECTED_MODEL.call(msg_thread.to_msg(), response_format="json_object")
+        if res_text:
+            output = res_text.strip().split('\n') # Split the string into a list of assertions
+            print_acr(f"Successfully generated postcondition from API\n {output}")
+            return output
+        else:
+            print_acr("API returned no content for postcondition generation.")
+        return ["No valid response from API."]
+
+    
+    def _generate_postcondition(self, description):
+        prompt = f"""
+        Given the following natural language description of a method:
+        "{description}".
+        Write a **symbolic** postcondition for the function consisting of exactly one assert statement and add three more assert statements.
+        """
+        
+        SYSTEM_PROMPT = """You are a helpful assistant that generates **symbolic** postcondition a text into json format."""
+
+        msg_thread = MessageThread()
+        msg_thread.add_system(SYSTEM_PROMPT)
+        msg_thread.add_user(prompt)
+        res_text, *_ = common.SELECTED_MODEL.call(msg_thread.to_msg(), response_format="json_object")
+        if res_text:
+            output = res_text.strip().split('\n') # Split the string into a list of assertions
+            print_acr(f"Successfully generated postcondition from API\n {output}")
+            return output
+        else:
+            print_acr("API returned no content for postcondition generation.")
+        return ["No valid response from API."]
+    
+
+    def generate_postconditions(self) -> tuple[str, str, bool]:
+        """Generate postconditions for the current task."""
+        try:
+            postconditions = self.generate_postcondition_(self.task.get_issue_statement())
+
+            postcondition_str = "\n".join(postconditions)
+            tool_output = f"Generated postconditions:\n{postcondition_str}"
+            summary = "Successfully generated postconditions."
+            return summary,tool_output, True
+        except Exception as e:
+            tool_output = f"Error: {str(e)}"
+            summary = f"Failed to generate postconditions for {str(e)}."
+            return tool_output, summary, False
+
 
     def next_tools(self) -> list[str]:
         """

@@ -90,6 +90,7 @@ def main(args, subparser_dest_attr_name: str = "command"):
     globals.only_save_sbfl_result = args.save_sbfl_result
     globals.disable_patch_generation = args.output_fix_locs
     globals.context_generation_limit = args.output_fix_limit
+    globals.enable_post_conditions = args.enable_post_conditions
 
     subcommand = getattr(args, subparser_dest_attr_name)
     if subcommand == "swe-bench":
@@ -267,7 +268,9 @@ def add_task_related_args(parser: ArgumentParser) -> None:
         default=10,
         help="Limit output of content retrieval rounds",
     )
-
+    parser.add_argument(
+        "--enable-post-conditions", action="store_true", default=False, help="Enable Postconditions."
+    )
 
 def make_swe_tasks(
     task_id: str | None,

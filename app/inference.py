@@ -473,6 +473,14 @@ def run_one_task(
         localization_prompt += localization_result
         msg_thread.add_user(localization_prompt)
 
+    if globals.enable_post_conditions:
+        postcondition_result, _, _ = api_manager.generate_postconditions()
+        postcondition_prompt = "An external tool is used to generate Postconditions to identify the accepted behavior of the code. You can choose to use the results from this tool, if you think they are useful:\n"
+        postcondition_prompt += "The tool output is as follows:\n"
+        postcondition_prompt += postcondition_result
+        
+        msg_thread.add_user(postcondition_prompt)
+
     if globals.enable_layered:
         return start_conversation_round_stratified(
             output_dir, msg_thread, api_manager, print_callback=print_callback
