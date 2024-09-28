@@ -141,6 +141,8 @@ def run_agent(
     cmd += f"--num-processes {num_processes} "
     if enbale_sbfl:
         cmd += "--enable-sbfl "
+    if enable_postconditions:
+        cmd += "--enable-postconditions "
     if enable_validation:
         cmd += "--enable-validation "
     if enable_angelic:
@@ -359,6 +361,7 @@ def main():
     temperature = float(config_dict["temperature"])
     selected_tasks_file = config_dict["selected_tasks_file"]
     enable_sbfl = config.getboolean("DEFAULT", "enable_sbfl", fallback=False)
+    enable_postconditions = config.getboolean("DEFAULT", "enable_postconditions", fallback=False)
     enable_validation = config.getboolean(
         "DEFAULT", "enable_validation", fallback=False
     )
@@ -389,6 +392,7 @@ def main():
         model,
         temperature,
         enable_sbfl,
+        enable_postconditions,
         enable_validation,
         enable_angelic,
         enable_perfect_angelic,

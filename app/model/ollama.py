@@ -183,6 +183,15 @@ class Llama3_1_405B(OllamaModel):
         super().__init__("llama3.1:405b")
         self.note = "Llama3.1:405B model."
 
+class FTllama3_1_70(OllamaModel):
+    def __init__(self):
+        super().__init__("gtandon/ft_llama3_1_swe_bench")
+        self.note = "FT_llama_3.1 70B model."
+
+class MistralLarge(OllamaModel):
+    def __init__(self):
+        super().__init__("mistral-large")
+        self.note = "Mistral Large model."
 class DeepSeekCoder_V2_16B(OllamaModel):
     def __init__(self):
         super().__init__("deepseek-coder-v2")

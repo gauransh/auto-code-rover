@@ -58,6 +58,7 @@ def run_github_issue():
     globals.conv_round_limit = args.conv_round_limit
     globals.enable_layered = args.enable_layered
     globals.enable_sbfl = args.enable_sbfl
+    globals.enable_postconditions = args.enable_postconditions
     globals.enable_validation = args.enable_validation
     globals.enable_angelic = args.enable_angelic
     globals.enable_perfect_angelic = args.enable_perfect_angelic

@@ -31,6 +31,9 @@ def register_all_models() -> None:
     common.register_model(ollama.Llama3_1_8B())
     common.register_model(ollama.Llama3_1_70B())
     common.register_model(ollama.Llama3_1_405B())
+    common.register_model(ollama.FTllama3_1_70())
+    common.register_model(ollama.MistralLarge())
+
     common.register_model(ollama.DeepSeekCoder_V2_16B())
     common.register_model(ollama.DeepSeekCoder_V2_236B())
 
