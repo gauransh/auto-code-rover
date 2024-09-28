@@ -68,15 +68,19 @@ class PostconditionGenerator:
         self.pull_request_info = pull_request_info
 
     def generate_postcondition(self):
+        
+        if self.function_name is None:
+            entrypoint = self.function_name if hasattr(self, 'function_name') else 'without function name but with provided {codeStubAndDocstring}'
+        
         context = {
-            'entrypoint': self.function_name,
+            'entrypoint': entrypoint,
             'codeStubAndDocstring': self.description,
             'toGenerateFull': 'postcondition',
             'toGenerateShort': 'postcondition',
             'toGenerateShortCaps': 'POSTCONDITION',
             'toGenerateGoal': 'does',
             'promptAdds': '',
-            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=self.function_name)
+            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=entrypoint)
         }
 
         if self.pull_request_info:
@@ -137,16 +141,21 @@ class ProjectApiManager:
         generator = PostconditionGenerator(function_name, description, file_context, signature, implementation, comments, pull_request_info)
         return generator.generate_postcondition()
 
-    def generate_postcondition(description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
+    def generate_postcondition(self,description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
+        if function_name is None:
+            entrypoint = 'without function name but with provided {codeStubAndDocstring}'
+        else:
+            entrypoint = function_name
+        
         context = {
-            'entrypoint': function_name or 'the function',
+            'entrypoint': entrypoint,
             'codeStubAndDocstring': description or '',
             'toGenerateFull': 'postcondition',
             'toGenerateShort': 'postcondition',
             'toGenerateShortCaps': 'POSTCONDITION',
             'toGenerateGoal': 'does',
             'promptAdds': '',
-            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=function_name or 'the function')
+            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=entrypoint)
         }
 
         if only_pr and pull_request_info:

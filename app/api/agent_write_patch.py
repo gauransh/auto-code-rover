@@ -27,12 +27,42 @@ from app.task import SweTask, Task
 SYSTEM_PROMPT = """You are a software developer maintaining a large project.
 You are working on an issue submitted to your project.
 The issue contains a description marked between <issue> and </issue>.
-You ultimate goal is to write a patch that resolves this issue.
+Your ultimate goal is to write a patch that resolves this issue.
+
+When writing your patch:
+1. Carefully analyze the issue and the provided context.
+2. Ensure your solution addresses the specific problem described in the issue.
+3. Consider potential side effects of your changes.
+4. Verify that your complete solution resolves the issue without introducing new problems.
+
+Remember, a successful patch fixes the immediate issue while maintaining the overall integrity of the system.
 """
 
+SYSTEM_PROMPT_POSTCOND = """You are a software developer maintaining a large project.
+You are working on an issue submitted to your project.
+The issue contains a description marked between <issue> and </issue>.
+Your ultimate goal is to write a patch that resolves this issue while adhering to specific postconditions.
 
-USER_PROMPT_INIT = """Write a patch for the issue, based on the retrieved context.\n\nYou can import necessary libraries.\n\n
-Return the patch in the format below.\n\nWithin `<file></file>`, replace `...` with actual file path.\n\nWithin `<original></original>`, replace `...` with the original code snippet from the program.\n\nWithin `<patched></patched>`, replace `...` with the fixed version of the original code. When adding orignal code and updated code, pay attention to indentation, as the code is in Python.
+These postconditions define the expected behavior and constraints of the system after your patch is applied. They serve as a guide for your solution and a verification tool for its correctness.
+
+When writing your patch:
+1. Carefully analyze the provided postconditions before starting your implementation.
+2. Use these postconditions as a guide to shape your solution strategy.
+3. Ensure each part of your patch contributes to satisfying one or more postconditions.
+4. After each modification, explicitly explain how it relates to or satisfies relevant postconditions.
+5. If a modification doesn't directly relate to a postcondition, justify its necessity for the overall solution.
+6. Consider potential edge cases or scenarios where the postconditions might be violated, and address them in your patch.
+7. Verify that your complete solution collectively satisfies all provided postconditions.
+
+Remember, a successful patch not only fixes the immediate issue but also maintains the system's integrity as defined by these postconditions. Your explanations of how the patch satisfies the postconditions are crucial for verifying the correctness of your solution.
+"""
+
+USER_PROMPT_INIT = """Write a patch for the issue, based on the retrieved context.
+
+You can import necessary libraries.
+
+Return the patch in the format below. Within `<file></file>`, replace `...` with the actual file path. Within `<original></original>`, replace `...` with the original code snippet from the program. Within `<patched></patched>`, replace `...` with the fixed version of the original code. When adding original code and updated code, pay attention to indentation, as the code is in Python.
+
 You can write multiple modifications if needed.
 
 ```
@@ -49,6 +79,55 @@ You can write multiple modifications if needed.
 # modification 3
 ...
 ```
+
+Ensure your patch addresses the issue effectively while maintaining the overall integrity of the system.
+"""
+
+USER_PROMPT_INIT_POSTCOND = """Write a patch for the issue, based on the retrieved context and guided by the provided postconditions.
+
+You can import necessary libraries.
+
+Approach the task as follows:
+1. Review the postconditions carefully before starting your implementation.
+2. For each modification you make:
+   a. Write the modification in the format specified below.
+   b. Immediately after each modification, explain in detail how it relates to or satisfies the relevant postconditions.
+   c. If a modification doesn't directly relate to a postcondition, explain why it's necessary for the overall solution.
+3. After completing all modifications, provide a final summary explaining how your complete patch collectively satisfies all postconditions.
+
+Return the patch in the format below. Within `<file></file>`, replace `...` with the actual file path. Within `<original></original>`, replace `...` with the original code snippet from the program. Within `<patched></patched>`, replace `...` with the fixed version of the original code. When adding original code and updated code, pay attention to indentation, as the code is in Python.
+
+You can write multiple modifications if needed.
+
+```
+# modification 1
+<file>...</file>
+<original>...</original>
+<patched>...</patched>
+<postcondition_check>
+Explain in detail how this modification satisfies or relates to the relevant postconditions.
+If it doesn't directly relate to a postcondition, justify its necessity for the overall solution.
+</postcondition_check>
+
+# modification 2
+<file>...</file>
+<original>...</original>
+<patched>...</patched>
+<postcondition_check>
+Explain in detail how this modification satisfies or relates to the relevant postconditions.
+If it doesn't directly relate to a postcondition, justify its necessity for the overall solution.
+</postcondition_check>
+
+# modification 3
+...
+
+<final_postcondition_check>
+Provide a comprehensive explanation of how your complete patch collectively satisfies all provided postconditions.
+Address any potential edge cases or scenarios where the postconditions might be challenged by your implementation.
+</final_postcondition_check>
+```
+
+Remember to consider all provided postconditions throughout your patch development process. Your explanations in the <postcondition_check> and <final_postcondition_check> sections are crucial for verifying the correctness of your solution.
 """
 
 
@@ -63,14 +142,33 @@ def run_with_retries(
     Since the agent may not always write an applicable patch, we allow for retries.
     This is a wrapper around the actual run.
     """
-    # (1) replace system prompt
+    # (1) Get postconditions if enabled
+    postconditions = task.api_manager.get_postconditions() if globals.enable_postconditions else []
+    
+    # (2) Select the appropriate system prompt and user prompt
+    system_prompt = SYSTEM_PROMPT_POSTCOND if globals.enable_postconditions else SYSTEM_PROMPT
+    user_prompt = USER_PROMPT_INIT_POSTCOND if globals.enable_postconditions else USER_PROMPT_INIT
+    
+    # (3) Create a modified system prompt that includes postconditions if enabled
+    modified_system_prompt = system_prompt
+    if globals.enable_postconditions and postconditions:
+        postcondition_text = "\n".join(postconditions)
+        modified_system_prompt += f"\n\nFor this specific issue, consider the following postconditions:\n{postcondition_text}\n\nEnsure your patch satisfies these postconditions while resolving the issue."
+
+    # (4) Replace system prompt
     messages = deepcopy(message_thread.messages)
     new_thread: MessageThread = MessageThread(messages=messages)
-    new_thread = agent_common.replace_system_prompt(new_thread, SYSTEM_PROMPT)
+    new_thread = agent_common.replace_system_prompt(new_thread, modified_system_prompt)
 
-    # (2) add the initial user prompt
-    new_thread.add_user(USER_PROMPT_INIT)
-    print_acr(USER_PROMPT_INIT, "patch generation", print_callback=print_callback)
+    # (5) Add the initial user prompt
+    new_thread.add_user(user_prompt)
+    print_acr(user_prompt, "patch generation", print_callback=print_callback)
+
+    # (6) Add postconditions to the message thread (for reference) if enabled
+    if globals.enable_postconditions and postconditions:
+        postcondition_prompt = "Remember to consider these postconditions when writing your patch:\n" + "\n".join(postconditions)
+        new_thread.add_user(postcondition_prompt)
+        print_acr(postcondition_prompt, "postconditions", print_callback=print_callback)
 
     can_stop = False
     result_msg = ""

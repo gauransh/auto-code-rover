@@ -105,6 +105,23 @@ def start_conversation_round_stratified(
     for round_no in round_count:
         api_manager.start_new_tool_call_layer()
 
+        # Add postconditions to the message thread at the start of each round
+        if globals.enable_postconditions:
+            postcondition_result, _, _ = api_manager.generate_postconditions()
+            if postcondition_result:
+                postcondition_prompt = (
+                    "An external tool is used to generate Postconditions to identify the accepted behavior of the code. "
+                    "You can choose to use the results from this tool, if you think they are useful:\n"
+                    "The tool output is as follows:\n"
+                    f"{postcondition_result}"
+                )
+                msg_thread.add_user(postcondition_prompt)
+                print_acr(
+                    postcondition_prompt,
+                    f"postconditions for round {round_no}",
+                    print_callback=print_callback,
+                )
+
         conversation_file = pjoin(output_dir, f"conversation_round_{round_no}.json")
         # save current state before starting a new round
         msg_thread.save_to_file(conversation_file)
@@ -241,10 +258,16 @@ def start_conversation_round_stratified(
 
         if round_no < globals.conv_round_limit:
             msg = (
-                "Based on your analysis, answer below questions:"
-                "\n- do we need more context: construct search API calls to get more context of the project. (leave it empty if you don't need more context)"
-                "\n- where are bug locations: buggy files and methods. (leave it empty if you don't have enough information)"
-            )
+                    "Based on your analysis, answer below questions:"
+                    "\n- do we need more context: construct search API calls to get more context of the project. (leave it empty if you don't need more context)"
+                    "\n- where are bug locations: buggy files and methods. (leave it empty if you don't have enough information)"
+                )
+            if globals.enable_postconditions:
+                msg += (
+                    "\n- how do the postconditions influence our analysis and guide our next steps?"
+                    "\n- what aspects of the code or context should we focus on to align with the postconditions?"
+                )
+            
             if isinstance(common.SELECTED_MODEL, ollama.OllamaModel):
                 # llama models tend to always output search APIs and buggy locations.
                 msg += "\n\nNOTE: If you have already identified the bug locations, do not make any search API calls."
@@ -281,6 +304,17 @@ def start_conversation_round_stratified(
 
     if intent:
         api_manager.start_new_tool_call_layer()
+        # Add postconditions before dispatching the final intent
+        if globals.enable_postconditions:
+            postcondition_result, _, _ = api_manager.generate_postconditions()
+            if postcondition_result:
+                postcondition_prompt = f"Ensure that the following postconditions are satisfied:\n{postcondition_result}"
+                msg_thread.add_user(postcondition_prompt)
+                print_acr(
+                    postcondition_prompt,
+                    "final postconditions",
+                    print_callback=print_callback,
+                )
         api_manager.dispatch_intent(intent, msg_thread, print_callback=print_callback)
         logger.info(f"Invoked {intent.func_name}.")
 
@@ -473,13 +507,26 @@ def run_one_task(
         localization_prompt += localization_result
         msg_thread.add_user(localization_prompt)
 
-    if globals.enable_post_conditions:
+    if globals.enable_postconditions:
         postcondition_result, _, _ = api_manager.generate_postconditions()
-        postcondition_prompt = "An external tool is used to generate Postconditions to identify the accepted behavior of the code. You can choose to use the results from this tool, if you think they are useful:\n"
-        postcondition_prompt += "The tool output is as follows:\n"
-        postcondition_prompt += postcondition_result
-        
-        msg_thread.add_user(postcondition_prompt)
+        if postcondition_result:
+            postcondition_prompt = f"""An external tool has generated Postconditions to identify the accepted behavior of the code.
+            These postconditions can guide our analysis and solution. Consider them if you find them useful:
+
+            Tool output:
+            {postcondition_result.strip()}
+
+            When analyzing the issue and proposing solutions, keep these postconditions in mind:
+            1. Ensure your proposed changes align with these postconditions.
+            2. If a postcondition seems to conflict with the bug fix, explain why and suggest how to resolve the conflict.
+            3. Use these postconditions to validate your solution's correctness and completeness.
+            """
+            msg_thread.add_user(postcondition_prompt)
+            print_acr(
+                postcondition_prompt,
+                f"postconditions for round {round_no}",
+                print_callback=print_callback,
+            )
 
     if globals.enable_layered:
         return start_conversation_round_stratified(
