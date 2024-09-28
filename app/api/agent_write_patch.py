@@ -143,15 +143,15 @@ def run_with_retries(
     This is a wrapper around the actual run.
     """
     # (1) Get postconditions if enabled
-    postconditions = task.api_manager.get_postconditions() if globals.enable_postconditions else []
+    postconditions = task.api_manager.get_postconditions() if globals.enable_post_conditions else []
     
     # (2) Select the appropriate system prompt and user prompt
-    system_prompt = SYSTEM_PROMPT_POSTCOND if globals.enable_postconditions else SYSTEM_PROMPT
-    user_prompt = USER_PROMPT_INIT_POSTCOND if globals.enable_postconditions else USER_PROMPT_INIT
+    system_prompt = SYSTEM_PROMPT_POSTCOND if globals.enable_post_conditions else SYSTEM_PROMPT
+    user_prompt = USER_PROMPT_INIT_POSTCOND if globals.enable_post_conditions else USER_PROMPT_INIT
     
     # (3) Create a modified system prompt that includes postconditions if enabled
     modified_system_prompt = system_prompt
-    if globals.enable_postconditions and postconditions:
+    if globals.enable_post_conditions and postconditions:
         postcondition_text = "\n".join(postconditions)
         modified_system_prompt += f"\n\nFor this specific issue, consider the following postconditions:\n{postcondition_text}\n\nEnsure your patch satisfies these postconditions while resolving the issue."
 
@@ -165,7 +165,7 @@ def run_with_retries(
     print_acr(user_prompt, "patch generation", print_callback=print_callback)
 
     # (6) Add postconditions to the message thread (for reference) if enabled
-    if globals.enable_postconditions and postconditions:
+    if globals.enable_post_conditions and postconditions:
         postcondition_prompt = "Remember to consider these postconditions when writing your patch:\n" + "\n".join(postconditions)
         new_thread.add_user(postcondition_prompt)
         print_acr(postcondition_prompt, "postconditions", print_callback=print_callback)

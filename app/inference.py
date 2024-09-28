@@ -106,7 +106,7 @@ def start_conversation_round_stratified(
         api_manager.start_new_tool_call_layer()
 
         # Add postconditions to the message thread at the start of each round
-        if globals.enable_postconditions:
+        if globals.enable_post_conditions:
             postcondition_result, _, _ = api_manager.generate_postconditions()
             if postcondition_result:
                 postcondition_prompt = (
@@ -262,7 +262,7 @@ def start_conversation_round_stratified(
                     "\n- do we need more context: construct search API calls to get more context of the project. (leave it empty if you don't need more context)"
                     "\n- where are bug locations: buggy files and methods. (leave it empty if you don't have enough information)"
                 )
-            if globals.enable_postconditions:
+            if globals.enable_post_conditions:
                 msg += (
                     "\n- how do the postconditions influence our analysis and guide our next steps?"
                     "\n- what aspects of the code or context should we focus on to align with the postconditions?"
@@ -305,7 +305,7 @@ def start_conversation_round_stratified(
     if intent:
         api_manager.start_new_tool_call_layer()
         # Add postconditions before dispatching the final intent
-        if globals.enable_postconditions:
+        if globals.enable_post_conditions:
             postcondition_result, _, _ = api_manager.generate_postconditions()
             if postcondition_result:
                 postcondition_prompt = f"Ensure that the following postconditions are satisfied:\n{postcondition_result}"
@@ -507,7 +507,7 @@ def run_one_task(
         localization_prompt += localization_result
         msg_thread.add_user(localization_prompt)
 
-    if globals.enable_postconditions:
+    if globals.enable_post_conditions:
         postcondition_result, _, _ = api_manager.generate_postconditions()
         if postcondition_result:
             postcondition_prompt = f"""An external tool has generated Postconditions to identify the accepted behavior of the code.

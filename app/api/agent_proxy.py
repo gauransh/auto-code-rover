@@ -123,7 +123,7 @@ def run(text: str) -> tuple[str, MessageThread]:
     """
 
     msg_thread = MessageThread()
-    prompt = PROXY_PROMPT_POSTCOND if globals.enable_postconditions else PROXY_PROMPT
+    prompt = PROXY_PROMPT_POSTCOND if globals.enable_post_conditions else PROXY_PROMPT
     msg_thread.add_system(prompt)
     msg_thread.add_user(text)
     res_text, *_ = common.SELECTED_MODEL.call(
@@ -140,10 +140,10 @@ def is_valid_response(data: Any) -> tuple[bool, str]:
 
     has_api_calls = bool(data.get("API_calls"))
     has_bug_locations = bool(data.get("bug_locations"))
-    has_postconditions = globals.enable_postconditions and bool(data.get("postconditions"))
+    has_postconditions = globals.enable_post_conditions and bool(data.get("postconditions"))
 
-    if not (has_api_calls or has_bug_locations or (globals.enable_postconditions and has_postconditions)):
-        return False, "API_calls and bug_locations are empty" + (" and postconditions are empty" if globals.enable_postconditions else "")
+    if not (has_api_calls or has_bug_locations or (globals.enable_post_conditions and has_postconditions)):
+        return False, "API_calls and bug_locations are empty" + (" and postconditions are empty" if globals.enable_post_conditions else "")
 
     if has_bug_locations:
         bug_locations = data["bug_locations"]
@@ -176,7 +176,7 @@ def is_valid_response(data: Any) -> tuple[bool, str]:
             if len(func_args) != len(arg_names):
                 return False, f"the API call '{api_call}' has wrong number of arguments"
 
-    if globals.enable_postconditions and has_postconditions:
+    if globals.enable_post_conditions and has_postconditions:
         postconditions = data["postconditions"]
         if not isinstance(postconditions, list):
             return False, "postconditions must be a list"
