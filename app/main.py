@@ -3,6 +3,7 @@ The main driver.
 """
 
 import json
+import shutil
 from argparse import ArgumentParser
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -106,7 +107,12 @@ def main(args, subparser_dest_attr_name: str = "command"):
             setup_dir = abspath(setup_dir)
 
         task = RawGithubTask(
-            args.task_id, args.clone_link, args.commit_hash, args.issue_link, setup_dir
+            args.task_id,
+            args.clone_link,
+            args.commit_hash,
+            args.issue_link,
+            setup_dir,
+            args.use_comments,
         )
         groups = {"github": [task]}
         run_task_groups(groups, num_processes)
@@ -155,7 +161,17 @@ def set_github_parser_args(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--clone-link", type=str, help="The link to the repository to clone."
     )
-    parser.add_argument("--commit-hash", type=str, help="The commit hash to checkout.")
+    parser.add_argument(
+        "--commit-hash",
+        type=str,
+        help="The commit hash to checkout. If not specified, the latest commit on default branch will be used.",
+    )
+    parser.add_argument(
+        "--use-comments",
+        action="store_true",
+        default=False,
+        help="Include the comments of the issue.",
+    )
     parser.add_argument("--issue-link", type=str, help="The link to the issue.")
     parser.add_argument(
         "--setup-dir",
@@ -471,11 +487,16 @@ def run_raw_task(
             f"Patch generation is disabled. Please find fix locations at: {task_output_dir}/fix_locations.json"
         )
     else:
+        output_patch_path = pjoin(task_output_dir, "final_patch.diff")
         final_patch_path = get_final_patch_path(task_output_dir)
         if final_patch_path is not None:
+            # cppy the final patch to the fixed path
+            shutil.copy2(final_patch_path, output_patch_path)
+
             log.log_and_always_print(
-                f"Please find the generated patch at: {final_patch_path}"
+                f"Please find the generated patch at: {output_patch_path}"
             )
+
             if isinstance(task, RawSweTask):
                 log.log_and_always_print(
                     "[SWE-bench mode] Note that the patch may be move to other paths in SWE-bench mode. "
@@ -526,17 +547,21 @@ def do_inference(
 
             end_time = datetime.now()
 
-            dump_cost(start_time, end_time, task_output_dir)
+            dump_cost(start_time, end_time, task_output_dir, python_task.project_path)
     finally:
         python_task.reset_project()
 
     return run_ok
 
 
-def dump_cost(start_time: datetime, end_time: datetime, task_output_dir: str):
+def dump_cost(
+    start_time: datetime, end_time: datetime, task_output_dir: str, project_path: str
+):
+    with apputils.cd(project_path):
+        commit_hash = apputils.get_current_commit_hash()
     model_stats = common.SELECTED_MODEL.get_overall_exec_stats()
     stats = {
-        "commit": apputils.get_current_commit_hash(),
+        "commit": commit_hash,
         "start_epoch": start_time.timestamp(),
         "end_epoch": end_time.timestamp(),
         "elapsed_seconds": (end_time - start_time).total_seconds(),

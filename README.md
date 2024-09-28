@@ -26,8 +26,9 @@
 > This is a public version of the AutoCodeRover project. Check the latest results on our [website](https://autocoderover.dev/).
 
 ## 📣 Updates
-- [July 18, 2024] Added support for fix localization output mode and requirements.txt
-- [June 20, 2024] AutoCodeRover now achieves **30.67%** efficacy (pass@1) on SWE-bench-lite!
+- [August 14, 2024] On the SWE-bench Verified dataset released by OpenAI, AutoCodeRover(v20240620) achieves **38.40%** efficacy, and AutoCodeRover(v20240408) achieves 28.8% efficacy. More details in the [blog post](https://openai.com/index/introducing-swe-bench-verified/) from OpenAI and [SWE-bench leaderboard](https://www.swebench.com/).
+- [July 18, 2024] AutoCodeRover now supports a new mode that outputs the list of potential fix locations.
+- [June 20, 2024] AutoCodeRover(v20240620) now achieves **30.67%** efficacy (pass@1) on SWE-bench-lite!
 - [June 08, 2024] Added support for Gemini, Groq (thank you [KasaiHarcore](https://github.com/KasaiHarcore) for the contribution!) and Anthropic models through AWS Bedrock (thank you [JGalego](https://github.com/JGalego) for the contribution!).
 - [April 29, 2024] Added support for Claude and Llama models. Find the list of supported models [here](#using-a-different-model)! Support for more models coming soon.
 - [April 19, 2024] AutoCodeRover now supports running on [GitHub issues](#github-issue-mode-set-up-and-run-on-new-github-issues) and [local issues](#local-issue-mode-set-up-and-run-on-local-repositories-and-local-issues)! Feel free to try it out and we welcome your feedback!
@@ -38,14 +39,14 @@
 
 AutoCodeRover is a fully automated approach for resolving GitHub issues (bug fixing and feature addition) where LLMs are combined with analysis and debugging capabilities to prioritize patch locations ultimately leading to a patch.
 
-[Update on June 20, 2024] AutoCodeRover now resolves **30.67%** of issues (pass@1) in SWE-bench lite! AutoCodeRover achieved this efficacy while being economical - each task costs **less than $0.7** and is completed within **7 mins**!
+[Update on June 20, 2024] AutoCodeRover(v20240620) now resolves **30.67%** of issues (pass@1) in SWE-bench lite! AutoCodeRover achieved this efficacy while being economical - each task costs **less than $0.7** and is completed within **7 mins**!
 
 <p align="center">
 <img src=https://github.com/nus-apr/auto-code-rover/assets/16000056/78d184b2-f15c-4408-9eac-cfd3a11a503a width=500/>
 <img src=https://github.com/nus-apr/auto-code-rover/assets/16000056/83253ae9-8789-474e-942d-708495b5b310 width=500/>
 </p>
 
-[April 08, 2024] First release of AutoCodeRover resolves **19%** of issues in [SWE-bench lite](https://www.swebench.com/lite.html) (pass@1), improving over the current state-of-the-art efficacy of AI software engineers.
+[April 08, 2024] First release of AutoCodeRover(v20240408) resolves **19%** of issues in [SWE-bench lite](https://www.swebench.com/lite.html) (pass@1), improving over the current state-of-the-art efficacy of AI software engineers.
 
 
 AutoCodeRover works in two stages:
@@ -71,13 +72,21 @@ AutoCodeRover has two unique features:
 
 For referring to our work, please cite and mention:
 ```
-@misc{zhang2024autocoderover,
-      title={AutoCodeRover: Autonomous Program Improvement},
-      author={Yuntong Zhang and Haifeng Ruan and Zhiyu Fan and Abhik Roychoudhury},
-      year={2024},
-      eprint={2404.05427},
-      archivePrefix={arXiv},
-      primaryClass={cs.SE}
+@inproceedings{zhang2024autocoderover,
+    author = {Zhang, Yuntong and Ruan, Haifeng and Fan, Zhiyu and Roychoudhury, Abhik},
+    title = {AutoCodeRover: Autonomous Program Improvement},
+    year = {2024},
+    isbn = {9798400706127},
+    publisher = {Association for Computing Machinery},
+    address = {New York, NY, USA},
+    url = {https://doi.org/10.1145/3650212.3680384},
+    doi = {10.1145/3650212.3680384},
+    booktitle = {Proceedings of the 33rd ACM SIGSOFT International Symposium on Software Testing and Analysis},
+    pages = {1592–1604},
+    numpages = {13},
+    keywords = {automatic program repair, autonomous software engineering, autonomous software improvement, large language model},
+    location = {Vienna, Austria},
+    series = {ISSTA 2024}
 }
 ```
 
@@ -155,12 +164,12 @@ and generate patch:
 ```
 cd /opt/auto-code-rover
 conda activate auto-code-rover
-PYTHONPATH=. python app/main.py github-issue --output-dir output --setup-dir setup --model gpt-4-0125-preview --model-temperature 0.2 --task-id <task id> --clone-link <link for cloning the project> --commit-hash <any version that has the issue> --issue-link <link to issue page>
+PYTHONPATH=. python app/main.py github-issue --output-dir output --setup-dir setup --model gpt-4o-2024-05-13 --model-temperature 0.2 --task-id <task id> --clone-link <link for cloning the project> --commit-hash <any version that has the issue> --issue-link <link to issue page>
 ```
 Here is an example command for running ACR on an issue from the langchain GitHub issue tracker:
 
 ```
-PYTHONPATH=. python app/main.py github-issue --output-dir output --setup-dir setup --model gpt-4-0125-preview --model-temperature 0.2 --task-id langchain-20453 --clone-link https://github.com/langchain-ai/langchain.git --commit-hash cb6e5e5 --issue-link https://github.com/langchain-ai/langchain/issues/20453
+PYTHONPATH=. python app/main.py github-issue --output-dir output --setup-dir setup --model gpt-4o-2024-05-13 --model-temperature 0.2 --task-id langchain-20453 --clone-link https://github.com/langchain-ai/langchain.git --commit-hash cb6e5e5 --issue-link https://github.com/langchain-ai/langchain/issues/20453
 ```
 
 The `<task id>` can be any string used to identify this issue.
@@ -189,7 +198,7 @@ and run the following commands:
 ```
 cd /opt/auto-code-rover
 conda activate auto-code-rover
-PYTHONPATH=. python app/main.py local-issue --output-dir output --model gpt-4-0125-preview --model-temperature 0.2 --task-id <task id> --local-repo <path to the local project repository> --issue-file <path to the file containing issue description>
+PYTHONPATH=. python app/main.py local-issue --output-dir output --model gpt-4o-2024-05-13 --model-temperature 0.2 --task-id <task id> --local-repo <path to the local project repository> --issue-file <path to the file containing issue description>
 ```
 
 If patch generation is successful, the path to the generated patch will be printed in the end.
@@ -243,7 +252,7 @@ Before running the task (`django__django-11133` here), make sure it has been set
 ```
 cd /opt/auto-code-rover
 conda activate auto-code-rover
-PYTHONPATH=. python app/main.py swe-bench --model gpt-4-0125-preview --setup-map ../SWE-bench/setup_result/setup_map.json --tasks-map ../SWE-bench/setup_result/tasks_map.json --output-dir output --task django__django-11133
+PYTHONPATH=. python app/main.py swe-bench --model gpt-4o-2024-05-13 --setup-map ../SWE-bench/setup_result/setup_map.json --tasks-map ../SWE-bench/setup_result/tasks_map.json --output-dir output --task django__django-11133
 ```
 
 The output of the run can then be found in `output/`. For example, the patch generated for `django__django-11133` can be found at a location like this: `output/applicable_patch/django__django-11133_yyyy-MM-dd_HH-mm-ss/extracted_patch_1.diff` (the date-time field in the directory name will be different depending on when the experiment was run).
@@ -255,7 +264,7 @@ First, put the id's of all tasks to run in a file, one per line. Suppose this fi
 ```
 cd /opt/auto-code-rover
 conda activate auto-code-rover
-PYTHONPATH=. python app/main.py swe-bench --model gpt-4-0125-preview --setup-map ../SWE-bench/setup_result/setup_map.json --tasks-map ../SWE-bench/setup_result/tasks_map.json --output-dir output --task-list-file /opt/SWE-bench/tasks.txt
+PYTHONPATH=. python app/main.py swe-bench --model gpt-4o-2024-05-13 --setup-map ../SWE-bench/setup_result/setup_map.json --tasks-map ../SWE-bench/setup_result/tasks_map.json --output-dir output --task-list-file /opt/SWE-bench/tasks.txt
 ```
 
 **NOTE**: make sure that the tasks in `tasks.txt` have all been set up in SWE-bench. See the steps [above](#set-up-one-or-more-tasks-in-swe-bench).
@@ -278,7 +287,9 @@ The current list of supported models:
 
 |  | Model | AutoCodeRover cmd line argument |
 |:--------------:|---------------|--------------|
-| OpenAI         | gpt-4-turbo-2024-04-09 | --model gpt-4-turbo-2024-04-09 |
+| OpenAI         | gpt-4o-2024-08-06      | --model gpt-4o-2024-08-06 |
+|                | gpt-4o-2024-05-13      | --model gpt-4o-2024-05-13 |
+|                | gpt-4-turbo-2024-04-09 | --model gpt-4-turbo-2024-04-09 |
 |                | gpt-4-0125-preview     | --model gpt-4-0125-preview |
 |                | gpt-4-1106-preview     | --model gpt-4-1106-preview |
 |                | gpt-3.5-turbo-0125     | --model gpt-3.5-turbo-0125 |
