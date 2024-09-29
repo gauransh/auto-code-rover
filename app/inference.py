@@ -107,13 +107,13 @@ def start_conversation_round_stratified(
 
         # Add postconditions to the message thread at the start of each round
         if globals.enable_post_conditions:
-            postcondition_result, _, _ = api_manager.generate_postconditions()
+            postcondition_result, tool_output_postcondition_result, _ = api_manager.generate_postconditions()
             if postcondition_result:
                 postcondition_prompt = (
                     "An external tool is used to generate Postconditions to identify the accepted behavior of the code. "
-                    "You can choose to use the results from this tool, if you think they are useful:\n"
+                    "You can choose to use the results from this tool, if you think they are useful.\n"
                     "The tool output is as follows:\n"
-                    f"{postcondition_result}"
+                    f"{tool_output_postcondition_result}"
                 )
                 msg_thread.add_user(postcondition_prompt)
                 print_acr(
@@ -306,9 +306,9 @@ def start_conversation_round_stratified(
         api_manager.start_new_tool_call_layer()
         # Add postconditions before dispatching the final intent
         if globals.enable_post_conditions:
-            postcondition_result, _, _ = api_manager.generate_postconditions()
+            postcondition_result, tool_output_postcondition_result, _  = api_manager.generate_postconditions()
             if postcondition_result:
-                postcondition_prompt = f"Ensure that the following postconditions are satisfied:\n{postcondition_result}"
+                postcondition_prompt = f"Ensure that the following postconditions are satisfied:\n{tool_output_postcondition_result}"
                 msg_thread.add_user(postcondition_prompt)
                 print_acr(
                     postcondition_prompt,
@@ -508,13 +508,13 @@ def run_one_task(
         msg_thread.add_user(localization_prompt)
 
     if globals.enable_post_conditions:
-        postcondition_result, _, _ = api_manager.generate_postconditions()
+        postcondition_result, tool_output_postcondition_result, _ = api_manager.generate_postconditions()
         if postcondition_result:
             postcondition_prompt = f"""An external tool has generated Postconditions to identify the accepted behavior of the code.
             These postconditions can guide our analysis and solution. Consider them if you find them useful:
 
             Tool output:
-            {postcondition_result.strip()}
+            {tool_output_postcondition_result.strip()}
 
             When analyzing the issue and proposing solutions, keep these postconditions in mind:
             1. Ensure your proposed changes align with these postconditions.

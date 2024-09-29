@@ -143,8 +143,8 @@ def run_with_retries(
     This is a wrapper around the actual run.
     """
     # (1) Get postconditions if enabled
-    postconditions = task.api_manager.get_postconditions() if globals.enable_post_conditions else []
-    
+    _, postconditions, _ = task.api_manager.generate_postconditions()  if globals.enable_post_conditions else []
+   
     # (2) Select the appropriate system prompt and user prompt
     system_prompt = SYSTEM_PROMPT_POSTCOND if globals.enable_post_conditions else SYSTEM_PROMPT
     user_prompt = USER_PROMPT_INIT_POSTCOND if globals.enable_post_conditions else USER_PROMPT_INIT
