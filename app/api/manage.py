@@ -27,7 +27,7 @@ You are provided with the following Python function stub and docstring.
 You want to ensure that when the function is implemented, it complies with the specification given in the docstring:
 ${codeStubAndDocstring}
 
-Your task is to write a ${toGenerateFull}. The ${toGenerateShort} should be in Python and consist of exactly five assert statement. 
+Your task is to write ${toGenerateFull}. The ${toGenerateShort} should be in Python and consist of exactly five assert statement. 
 A Python comment explaining the ${toGenerateShort}'s meaning should precede it.
 
 For variables, the ${toGenerateShort} should only use the input parameters defined in the function stub and a hypothetical return value of the function, 
@@ -44,8 +44,8 @@ It should encapsulate an aspect of the function output specification without imp
 While not trivial, your ${toGenerateShort} should still be very simple and short. It should be a single line of code that is not too long, and it should capture 
 only one aspect of the function's behavior, not all of it. 
 
-For example, if the goal of the function were to sort a list, you might write a ${toGenerateShort} that checks that the elements in the list are in sorted order, 
-or you might write a ${toGenerateShort} that checks that the list is the same length as the input list. You would not write a ${toGenerateShort} that checks both of these things.
+For example, if the goal of the function were to sort a list, you might write ${toGenerateShort} that checks that the elements in the list are in sorted order, 
+or you might write ${toGenerateShort} that checks that the list is the same length as the input list. You would not write ${toGenerateShort} that checks both of these things.
 
 The format of your response should be:
 # Comment explaining what aspect of the function the ${toGenerateFull} checks
@@ -220,12 +220,17 @@ class ProjectApiManager:
     def generate_postconditions(self) -> tuple[str, str, bool]:
         """Generate postconditions for the current task."""
         try:
-            postconditions = self.generate_postcondition_(self.task.get_issue_statement())
-
-            postcondition_str = "\n".join(postconditions)
-            tool_output = f"Generated postconditions:\n{postcondition_str}"
-            summary = "Successfully generated postconditions."
-            return summary,tool_output, True
+            print_acr(f"In order to generate postconditions, we need to get the issue statement. Issue statement: {self.task.get_issue_statement()}")
+            if self.task.get_issue_statement():
+                postconditions = self.generate_postcondition_(self.task.get_issue_statement())
+                postcondition_str = "\n".join(postconditions)
+                tool_output = f"Generated postconditions:\n{postcondition_str}"
+                summary = "Successfully generated postconditions."
+                return summary,tool_output, True
+            else:
+                tool_output = f"Error: {str(e)}"
+                summary = f"Failed to generate postconditions for {str(e)}."
+                return tool_output, summary, False
         except Exception as e:
             tool_output = f"Error: {str(e)}"
             summary = f"Failed to generate postconditions for {str(e)}."
