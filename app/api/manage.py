@@ -23,17 +23,17 @@ from string import Template
 from app.model import common
 
 GEN_ONE_NO_REF_SIMPLE= Template("""
-You are provided with the following Python function stub and docstring for ${entrypoint}. 
+You are provided with the following Python function stub and docstring. 
 You want to ensure that when the function is implemented, it complies with the specification given in the docstring:
 ${codeStubAndDocstring}
 
-Your task is to write a ${toGenerateFull} for ${entrypoint}. The ${toGenerateShort} should be in Python and consist of exactly one assert statement. 
+Your task is to write a ${toGenerateFull}. The ${toGenerateShort} should be in Python and consist of exactly five assert statement. 
 A Python comment explaining the ${toGenerateShort}'s meaning should precede it.
 
 For variables, the ${toGenerateShort} should only use the input parameters defined in the function stub and a hypothetical return value of the function, 
 which we'll assume is stored in a variable `return_value`. For string manipulation, Python's re (regular expressions) library can be used. 
 If other Python standard library functions are necessary, include the corresponding imports. However, refrain from using external libraries or 
-calling the function itself (in this case, ${entrypoint}) within the ${toGenerateShort}.
+calling the function itself within the ${toGenerateShort}.
 
 If the ${toGenerateShort} calls any functions, they should only be those from the functional subset of Python. By this, we mean functions that are pure 
 (i.e., no side effects, depends only on input values) such as `all()`, `len()`, `map()`, `filter()`, etc.
@@ -51,15 +51,14 @@ The format of your response should be:
 # Comment explaining what aspect of the function the ${toGenerateFull} checks
 CODE FOR EXACTLY FIVE ${toGenerateShortCaps} USING ASSERT GOES HERE
 
-The ${toGenerateShort} should hold true whenever the function ${entrypoint} executes successfully as specified in the docstring, regardless of the eventual internal implementation of the function.
+The ${toGenerateShort} should hold true whenever the function executes successfully as specified in the docstring, regardless of the eventual internal implementation of the function.
 """)
 
 POST_COND_TO_USE = Template("For variables, only use the function inputs and the return value of the function. You can use python's re (regular expressions) if needed to deal with strings. Do not call ${entrypoint} itself in the postcondition. Instead, assume that the function has already been called and its return value is available in a variable called `return_value` that you can use. In the postcondition, only use functions that are part of the functional subset of python (e.g., all(), len(), map(), filter(), etc.)")
 
 
 class PostconditionGenerator:
-    def __init__(self, function_name, description, file_context=None, signature=None, implementation=None, comments=None, pull_request_info=None):
-        self.function_name = function_name
+    def __init__(self, description, file_context=None, signature=None, implementation=None, comments=None, pull_request_info=None):
         self.description = description
         self.file_context = file_context
         self.signature = signature
@@ -69,18 +68,13 @@ class PostconditionGenerator:
 
     def generate_postcondition(self):
         
-        if self.function_name is None:
-            entrypoint = self.function_name if hasattr(self, 'function_name') else 'without function name but with provided {codeStubAndDocstring}'
-        
         context = {
-            'entrypoint': entrypoint,
             'codeStubAndDocstring': self.description,
             'toGenerateFull': 'postcondition',
             'toGenerateShort': 'postcondition',
             'toGenerateShortCaps': 'POSTCONDITION',
             'toGenerateGoal': 'does',
             'promptAdds': '',
-            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=entrypoint)
         }
 
         if self.pull_request_info:
@@ -137,25 +131,19 @@ class ProjectApiManager:
     ]
 
     
-    def generate_postcondition_(self, description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
-        generator = PostconditionGenerator(function_name, description, file_context, signature, implementation, comments, pull_request_info)
+    def generate_postcondition_(self, description=None, implementation=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
+        generator = PostconditionGenerator(description, file_context, signature, implementation, comments, pull_request_info)
         return generator.generate_postcondition()
 
-    def generate_postcondition(self,description=None, implementation=None, function_name=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
-        if function_name is None:
-            entrypoint = 'without function name but with provided {codeStubAndDocstring}'
-        else:
-            entrypoint = function_name
+    def generate_postcondition(self,description=None, implementation=None, file_context=None, signature=None, external_functions_info=None, comments=None, pull_request_info=None, only_pr=False):
         
         context = {
-            'entrypoint': entrypoint,
             'codeStubAndDocstring': description or '',
             'toGenerateFull': 'postcondition',
             'toGenerateShort': 'postcondition',
             'toGenerateShortCaps': 'POSTCONDITION',
             'toGenerateGoal': 'does',
             'promptAdds': '',
-            'toUse': POST_COND_TO_USE.safe_substitute(entrypoint=entrypoint)
         }
 
         if only_pr and pull_request_info:

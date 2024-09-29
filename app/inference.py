@@ -134,7 +134,7 @@ def start_conversation_round_stratified(
             print_callback=print_callback,
         )
 
-        res_text, *_ = common.SELECTED_MODEL.call(msg_thread.to_msg())
+        res_text, *_ = common.SELECTED_MODEL.call(msg_thread.to_msg(), response_format="json_object")
         msg_thread.add_model(res_text, tools=[])
         print_retrieval(res_text, f"round {round_no}", print_callback=print_callback)
 
@@ -524,7 +524,7 @@ def run_one_task(
             msg_thread.add_user(postcondition_prompt)
             print_acr(
                 postcondition_prompt,
-                f"postconditions for round {round_no}",
+                f"postconditions for this round",
                 print_callback=print_callback,
             )
 
