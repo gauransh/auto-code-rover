@@ -159,7 +159,7 @@ class ProjectApiManager:
                             Pull Request Deletions: {pull_request_info['deletions']}
                             Pull Request Changed Files: {pull_request_info['changed_files']}
                             """
-            prompt = GEN_ONE_NO_REF_SIMPLE.safe_substitute(context)
+            prompt = GEN_FIVE_NO_REF_SIMPLE.safe_substitute(context)
             print_acr(f"Prompt looks like: {prompt}")
         else:
             if pull_request_info:
