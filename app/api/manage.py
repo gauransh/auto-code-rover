@@ -22,40 +22,44 @@ from app.task import Task
 from string import Template
 from app.model import common
 
-GEN_ONE_NO_REF_SIMPLE= Template("""
-You are provided with the following Python function stub and docstring. 
-You want to ensure that when the function is implemented, it complies with the specification given in the docstring:
+GEN_FIVE_NO_REF_SIMPLE = Template("""
+You are provided with the following Python function implementation, and you want to ensure it is implemented correctly according to the specification in the docstring:
+
 ${codeStubAndDocstring}
 
-Your task is to write ${toGenerateFull}. The ${toGenerateShort} should be in Python and consist of exactly five assert statement. 
-A Python comment explaining the ${toGenerateShort}'s meaning should precede it.
+Your task is to write a **symbolic postcondition** for the function, which includes exactly **five** assert statements. Each assert statement should check a different aspect of the function’s expected behavior, such as type, length, values, structure, or other properties described in the docstring. 
 
-For variables, the ${toGenerateShort} should only use the input parameters defined in the function stub and a hypothetical return value of the function, 
-which we'll assume is stored in a variable `return_value`. For string manipulation, Python's re (regular expressions) library can be used. 
-If other Python standard library functions are necessary, include the corresponding imports. However, refrain from using external libraries or 
-calling the function itself within the ${toGenerateShort}.
+Each assert statement should be preceded by a Python comment explaining what the assert checks. The postcondition should use the input parameters (defined in the function stub) and the hypothetical return value, stored in a variable `return_value`. 
 
-If the ${toGenerateShort} calls any functions, they should only be those from the functional subset of Python. By this, we mean functions that are pure 
-(i.e., no side effects, depends only on input values) such as `all()`, `len()`, `map()`, `filter()`, etc.
+For string manipulation, you may use Python's `re` (regular expressions) library or other standard Python libraries as necessary. However, avoid using external libraries or calling the function itself in the postcondition.
 
-Although the ${toGenerateShort} should be less computationally complex than the function itself and relatively simple, it should not be trivial. 
-It should encapsulate an aspect of the function output specification without implementing the function itself and should be easily readable by a human.
+**Ensure that five assert statements are generated covering various aspects of the function's behavior.** Each assert should focus on one specific aspect and not be overly complex.
 
-While not trivial, your ${toGenerateShort} should still be very simple and short. It should be a single line of code that is not too long, and it should capture 
-only one aspect of the function's behavior, not all of it. 
-
-For example, if the goal of the function were to sort a list, you might write ${toGenerateShort} that checks that the elements in the list are in sorted order, 
-or you might write ${toGenerateShort} that checks that the list is the same length as the input list. You would not write ${toGenerateShort} that checks both of these things.
+The postcondition should include:
+- **Comment**: explaining what aspect of the function the postcondition checks.
+- **Assert**: the condition that must hold true for the function to be correct.
 
 The format of your response should be:
-# Comment explaining what aspect of the function the ${toGenerateFull} checks
-CODE FOR EXACTLY FIVE ${toGenerateShortCaps} USING ASSERT GOES HERE
+```
+# Comment explaining what aspect of the function the first assert statement checks
+# Assert 1: Explanation of the first assert statement
+ASSERTION 1 GOES HERE
+# Comment explaining what aspect of the function the second assert statement checks
+# Assert 2: Explanation of the  second assert statement
+ASSERTION 2 GOES HERE
+# Comment explaining what aspect of the function the third assert statement checks
+# Assert 3: Explanation of the third assert statement
+ASSERTION 3 GOES HERE
+# Comment explaining what aspect of the function the fourth assert statement checks
+# Assert 4: Explanation of the fourth assert statement
+ASSERTION 4 GOES HERE
+# Comment explaining what aspect of the function the fifth assert statement checks
+# Assert 5: Explanation of the fifth assert statement
+ASSERTION 5 GOES HERE
+```
 
-The ${toGenerateShort} should hold true whenever the function executes successfully as specified in the docstring, regardless of the eventual internal implementation of the function.
+The **five assert statements** should hold true whenever the function executes successfully as specified in the docstring, regardless of its internal implementation.
 """)
-
-POST_COND_TO_USE = Template("For variables, only use the function inputs and the return value of the function. You can use python's re (regular expressions) if needed to deal with strings. Do not call ${entrypoint} itself in the postcondition. Instead, assume that the function has already been called and its return value is available in a variable called `return_value` that you can use. In the postcondition, only use functions that are part of the functional subset of python (e.g., all(), len(), map(), filter(), etc.)")
-
 
 class PostconditionGenerator:
     def __init__(self, description, file_context=None, signature=None, implementation=None, comments=None, pull_request_info=None):
