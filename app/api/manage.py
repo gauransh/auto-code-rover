@@ -101,7 +101,7 @@ class PostconditionGenerator:
         if self.comments:
             context['codeStubAndDocstring'] += f"\nComments from users: {self.comments}"
 
-        prompt = GEN_ONE_NO_REF_SIMPLE.safe_substitute(context)
+        prompt = GEN_FIVE_NO_REF_SIMPLE.safe_substitute(context)
         print_acr(f"Constructed prompt for postcondition generation: {prompt}")
 
         SYSTEM_PROMPT = """You are a helpful assistant that generates **symbolic** postcondition a text into json format."""
