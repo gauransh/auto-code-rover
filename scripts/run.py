@@ -109,6 +109,7 @@ def run_agent(
     temperature: float,
     enbale_sbfl: bool,
     enable_validation: bool,
+    enable_post_conditions:bool,
     enable_angelic: bool,
     enable_perfect_angelic: bool,
     print_more: bool,
