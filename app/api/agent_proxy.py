@@ -31,7 +31,7 @@ search_class(class_name: str)
 search_code_in_file(code_str: str, file_path: str)
 search_code(code_str: str)
 
-Provide your answer in JSON structure like this:
+Provide your answer in JSON structure like this. Make sure none of the paths are argument placeholders like path/to/file, but are real paths.
 
 {
     "API_calls": ["api_call_1(args)", "api_call_2(args)", ...],
@@ -66,7 +66,7 @@ search_class(class_name: str)
 search_code_in_file(code_str: str, file_path: str)
 search_code(code_str: str)
 
-Provide your answer in JSON structure like this:
+Provide your answer in JSON structure like this. Make sure none of the paths are argument placeholders like path/to/file, but are real paths.
 
 {
     "API_calls": ["api_call_1(args)", "api_call_2(args)", ...],
@@ -92,11 +92,206 @@ NOTES:
 - Each postcondition (comment + assert) should be a separate string in the list.
 """
 
+RETRY_PROXY_PROMPT = """
+You are a helpful assistant tasked with extracting API calls and bug locations from a provided text. Your output must be a valid JSON structure.
+
+**Text Structure:**
+
+1. **Do we need more context?**  
+   *(Extract API calls from this part. If none, leave the "API_calls" list empty.)*
+
+2. **Where are bug locations?**  
+   *(Extract bug locations from this part. If none, leave the "bug_locations" list empty.)*
+
+**Instructions:**
+
+- **API Calls:**
+  - Extract any API calls mentioned in part 1.
+  - Format each API call as a valid Python expression without argument placeholders.
+    - **Correct:** `search_code("example_code")`
+    - **Incorrect:** `search_code(code_str="example_code")` or `search_code(code_str)`
+  - Ensure all arguments are specific and real (no placeholders like `"path/to/file"`).
+
+- **Bug Locations:**
+  - Extract bug locations mentioned in part 2.
+  - Each bug location should be a dictionary with the following keys:
+    - `"file"`: The real file path (omit if not specified).
+    - `"class"`: The class name (include if specified).
+    - `"method"`: The method name (include if specified).
+  - A bug location must have at least one of `"class"` or `"method"`.
+
+**Expected JSON Output:**
+
+```json
+{
+    "API_calls": ["function1(argument1)", "function2(argument2)", ...],
+    "bug_locations": [
+        {"file": "file_path", "class": "class_name", "method": "method_name"},
+        {"class": "class_name", "method": "method_name"},
+        ...
+    ]
+}
+```
+
+**Example:**
+
+If the text contains:
+
+- **Part 1:** "We might need to use `search_method('my_method')` and `search_class('MyClass')`."
+- **Part 2:** "The bug is located in `src/utils.py` within the `Helper` class."
+
+Then the JSON output should be:
+
+```json
+{
+    "API_calls": ["search_method('my_method')", "search_class('MyClass')"],
+    "bug_locations": [
+        {"file": "src/utils.py", "class": "Helper"}
+    ]
+}
+```
+
+**Additional Notes:**
+
+- Ensure the final JSON output is valid and properly formatted.
+- Do not include any argument placeholders or undefined variables.
+- Use actual values provided in the text.
+"""
+
+RETRY_PROXY_PROMPT_POSTCOND = """
+You are a helpful assistant tasked with extracting **API calls**, **bug locations**, and **postconditions** from a provided text. Your output must be formatted as valid JSON.
+
+**Text Structure:**
+
+1. **Do we need more context?**  
+   *(Extract API calls from this part. If none, leave the `"API_calls"` list empty.)*
+
+2. **Where are bug locations?**  
+   *(Extract bug locations from this part. If none, leave the `"bug_locations"` list empty.)*
+
+3. **What are the postconditions that need to be considered?**  
+   *(Extract postconditions from this part. If none, leave the `"postconditions"` list empty.)*
+
+---
+
+**Instructions:**
+
+### **API Calls:**
+
+- Extract any API calls mentioned in **Part 1**.
+- The available API calls are:
+
+  - `search_method_in_class(method_name, class_name)`
+  - `search_method_in_file(method_name, file_path)`
+  - `search_method(method_name)`
+  - `search_class_in_file(class_name, file_name)`
+  - `search_class(class_name)`
+  - `search_code_in_file(code_str, file_path)`
+  - `search_code(code_str)`
+
+- Format each API call as a valid Python expression **without argument placeholders**.
+  - **Correct:** `search_code("example_code")`
+  - **Incorrect:** `search_code(code_str="example_code")`, `search_code(code_str)`, or using placeholders like `"path/to/file"`
+- Ensure all arguments are specific and real; do not use placeholders.
+
+### **Bug Locations:**
+
+- Extract bug locations mentioned in **Part 2**.
+- Each bug location should be a dictionary with the following keys:
+
+  - `"file"`: The real file path (omit if not specified).
+  - `"class"`: The class name (include if specified).
+  - `"method"`: The method name (include if specified).
+
+- A bug location must have at least one of `"class"` or `"method"`.
+
+### **Postconditions:**
+
+- Extract postconditions mentioned in **Part 3**.
+- Each postcondition should include both:
+
+  - A **comment** explaining the postcondition (starting with `#`).
+  - The actual **assert** statement.
+
+- Combine the comment and assert statement into a **single string**, separated by a newline (`\n`).
+- Each postcondition (comment + assert) should be a separate string in the list.
+
+---
+
+**Expected JSON Output:**
+
+```json
+{
+    "API_calls": ["function1(argument1)", "function2(argument2)", ...],
+    "bug_locations": [
+        {"file": "file_path", "class": "class_name", "method": "method_name"},
+        {"class": "class_name", "method": "method_name"},
+        ...
+    ],
+    "postconditions": [
+        "# Comment explaining the postcondition\nassert condition",
+        "# Another comment\nassert another_condition",
+        ...
+    ]
+}
+```
+
+---
+
+**Example:**
+
+If the text contains:
+
+- **Part 1:**  
+  "We might need to use `search_method('my_method')` and `search_class('MyClass')`."
+
+- **Part 2:**  
+  "The bug is located in `src/utils.py` within the `Helper` class."
+
+- **Part 3:**  
+  "Ensure that the result is not empty.  
+  `# The result should not be empty`  
+  `assert len(result) > 0`"
+
+Then the JSON output should be:
+
+```json
+{
+    "API_calls": ["search_method('my_method')", "search_class('MyClass')"],
+    "bug_locations": [
+        {"file": "src/utils.py", "class": "Helper"}
+    ],
+    "postconditions": [
+        "# The result should not be empty\nassert len(result) > 0"
+    ]
+}
+```
+
+---
+
+**Additional Notes:**
+
+- **Validity:**
+  - Ensure the final JSON output is valid and properly formatted.
+  - Do not include any argument placeholders or undefined variables.
+  - Use actual values provided in the text.
+
+- **Formatting:**
+  - Each postcondition should be a **single string** combining the comment and the assert statement, separated by a newline (`\n`).
+  - Maintain the order of postconditions as they appear in the text.
+
+- **Completeness:**
+  - If any section (API calls, bug locations, or postconditions) has no relevant information, represent it with an empty list in the JSON output.
+"""
+
 def run_with_retries(text: str, retries=5) -> tuple[str | None, list[MessageThread]]:
     msg_threads = []
     for idx in range(1, retries + 1):
         logger.debug(
-            "Trying to select search APIs in json. Try {} of {}.", idx, retries
+            "Trying to select search APIs in json where text is {}. Try {} of {}.",
+            text,
+            idx,
+            retries,
         )
 
         res_text, new_thread = run(text)
@@ -105,8 +300,30 @@ def run_with_retries(text: str, retries=5) -> tuple[str | None, list[MessageThre
         extract_status, data = is_valid_json(res_text)
 
         if extract_status != ExtractStatus.IS_VALID_JSON:
-            logger.debug("Invalid json. Will retry.")
-            continue
+            if idx == retries:
+                logger.debug(
+                    "Failed to extract json after {} retries with basic prompt. Trying another prompt",
+                    retries,
+                )
+                msg_thread = MessageThread()
+                msg_thread.add_system(RETRY_PROXY_PROMPT_POSTCOND if globals.enable_post_conditions else RETRY_PROXY_PROMPT)
+                msg_thread.add_user(text)
+                res_text, *_ = common.SELECTED_MODEL.call(
+                    msg_thread.to_msg(), response_format="json_object"
+                )
+                extract_status, data = is_valid_json(res_text)
+                if extract_status != ExtractStatus.IS_VALID_JSON:
+                    logger.debug(
+                        "Failed to extract json after {} retries with new prompt. Giving up",
+                        retries,
+                    )
+                else:
+                    msg_thread.add_model(res_text, [])  # no tools
+                    msg_threads.append(msg_thread)
+            else:
+
+                logger.debug("Invalid json. Will retry.")
+                continue
 
         valid, diagnosis = is_valid_response(data)
         if not valid:
