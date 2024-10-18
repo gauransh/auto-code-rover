@@ -6,17 +6,18 @@ Create all models managed by Ollama here, since they need to talk to ollama serv
 import sys
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Literal, cast
-
+from typing import Literal, cast, Optional, List
 import httpx
 import ollama
 import timeout_decorator
 from ollama._types import Message, Options
-from openai.types.chat import ChatCompletionMessage
-
+from openai.types.chat import ChatCompletionMessage, ChatCompletionMessageToolCall
 from app.model import common
 from app.model.common import Model
-
+from tenacity import retry, stop_after_attempt, wait_random_exponential
+import time
+import json
+from app.data_structures import FunctionCallIntent
 
 class OllamaModel(Model):
     """
@@ -31,12 +32,13 @@ class OllamaModel(Model):
             cls._instances[cls]._initialized = False
         return cls._instances[cls]
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, cost_per_second: float):
         if self._initialized:
             return
         # local models are free
         super().__init__(name, 0.0, 0.0)
         self.client: ollama.Client | None = None
+        self.cost_per_second = cost_per_second
         self._initialized = True
 
     def setup(self) -> None:
@@ -97,107 +99,133 @@ class OllamaModel(Model):
         Given a chat completion message, extract the content from it.
         """
         content = chat_completion_message.content
-        if content is None:
-            return ""
-        else:
-            return content
+        return content if content is not None else ""
 
+    def extract_resp_func_calls(self, response: dict) -> list[FunctionCallIntent]:
+        result = []
+        tool_calls = response.get('tool_calls', [])
+        for call in tool_calls:
+            func_name = call.get('function', {}).get('name', '')
+            func_args_str = call.get('function', {}).get('arguments', '{}')
+            try:
+                args_dict = json.loads(func_args_str)
+            except json.JSONDecodeError:
+                args_dict = {}
+            func_call_intent = FunctionCallIntent(func_name, args_dict, call.get('function', {}))
+            result.append(func_call_intent)
+        return result
+
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(3))
     def call(
         self,
         messages: list[dict],
-        top_p=1,
-        tools=None,
+        top_p: float = 1,
+        tools: Optional[List[dict]] = None,
         response_format: Literal["text", "json_object"] = "text",
+        temperature: Optional[float] = None,
         **kwargs,
-    ):
+    ) -> tuple[
+        str,
+        Optional[List[ChatCompletionMessageToolCall]],
+        List[FunctionCallIntent],
+        float,
+        int,
+        int,
+    ]:
         stop_words = ["assistant", "\n\n \n\n"]
-        json_stop_words = deepcopy(stop_words)
-        json_stop_words.append("```")
-        json_stop_words.append(" " * 10)
-        # FIXME: ignore tools field since we don't use tools now
+        json_stop_words = deepcopy(stop_words) + ["```", " " * 10]
 
         assert self.client is not None
+
         try:
-            # build up options for ollama
-            options = {"temperature": common.MODEL_TEMP, "top_p": top_p}
+            options = {"temperature": temperature or common.MODEL_TEMP, "top_p": top_p}
             if response_format == "json_object":
-                # additional instructions for json mode
                 json_instruction = {
                     "role": "user",
                     "content": "Stop your response after a valid json is generated.",
                 }
                 messages.append(json_instruction)
-                # give more stop words and lower max_token for json mode
                 options.update({"stop": json_stop_words, "num_predict": 128})
-                response = self.client.chat(
-                    model=self.name,
-                    messages=cast(list[Message], messages),
-                    format="json",
-                    options=cast(Options, options),
-                    stream=False,
-                )
             else:
                 options.update({"stop": stop_words, "num_predict": 1024})
-                response = self.client.chat(
-                    model=self.name,
-                    messages=cast(list[Message], messages),
-                    options=cast(Options, options),
-                    stream=False,
-                )
+
+            start_time = time.time()
+            response = self.client.chat(
+                model=self.name,
+                messages=cast(list[Message], messages),
+                options=cast(Options, options),
+                stream=False,
+            )
+            end_time = time.time()
 
             assert isinstance(response, Mapping)
-            resp_msg = response.get("message", None)
-            if resp_msg is None:
-                return "", 0, 0, 0
-
+            resp_msg = response.get("message", {})
             content: str = resp_msg.get("content", "")
-            return content, 0, 0, 0
+
+            # Calculate cost based on time
+            elapsed_time = end_time - start_time
+            cost = self.cost_per_second * elapsed_time
+
+            # Extract function calls and tool calls
+            func_call_intents = self.extract_resp_func_calls(resp_msg)
+            tool_calls = resp_msg.get('tool_calls', None)
+
+            # Update thread cost
+            common.thread_cost.process_cost += cost
+            common.thread_cost.process_input_tokens += len(str(messages))  # Approximation
+            common.thread_cost.process_output_tokens += len(content)  # Approximation
+
+            return content, tool_calls, func_call_intents, cost, len(str(messages)), len(content)
 
         except Exception as e:
-            # FIXME: catch appropriate exception from ollama
             raise e
 
 
 class Llama3_8B(OllamaModel):
     def __init__(self):
-        super().__init__("llama3")
+        super().__init__("llama3", 0.00001)  # Example cost per second
         self.note = "Llama3 8B model."
 
 class Llama3_70B(OllamaModel):
     def __init__(self):
-        super().__init__("llama3:70b")
+        super().__init__("llama3:70b", 0.00001)
         self.note = "Llama3 70B model."
 
 class Llama3_1_8B(OllamaModel):
     def __init__(self):
-        super().__init__("llama3.1")
+        super().__init__("llama3.1", 0.00001)
         self.note = "Llama3.1 8B model."
 
 class Llama3_1_70B(OllamaModel):
     def __init__(self):
-        super().__init__("llama3.1:70b")
+        super().__init__("llama3.1:70b", 0.00001)
         self.note = "Llama3.1 70B model."
 
 class Llama3_1_405B(OllamaModel):
     def __init__(self):
-        super().__init__("llama3.1:405b")
+        super().__init__("llama3.1:405b", 0.00001)
         self.note = "Llama3.1:405B model."
 
-class FTllama3_1_70(OllamaModel):
+class FTllama3_1_8B(OllamaModel):
     def __init__(self):
-        super().__init__("gtandon/ft_llama3_1_swe_bench")
-        self.note = "FT_llama_3.1 70B model."
+        super().__init__("gtandon/ft_llama3_1_swe_bench", 0.00001)
+        self.note = "FT_llama_3.1 8b model."
+
+class Nemotron(OllamaModel):
+    def __init__(self):
+        super().__init__("nemotron", 0.00001)
+        self.note = "Nemotron Llama3.1 70B model.
 
 class MistralLarge(OllamaModel):
     def __init__(self):
-        super().__init__("mistral-large")
+        super().__init__("mistral-large", 0.00001)
         self.note = "Mistral Large model."
 class DeepSeekCoder_V2_16B(OllamaModel):
     def __init__(self):
-        super().__init__("deepseek-coder-v2")
+        super().__init__("deepseek-coder-v2", 0.00001)
         self.note = "Deep-seek-coder-v2:16b model."
 
 class DeepSeekCoder_V2_236B(OllamaModel):
     def __init__(self):
-        super().__init__("deepseek-coder-v2:236b")
+        super().__init__("deepseek-coder-v2:236b", 0.00001)
         self.note = "Deep-seek-coder-v2:236b model."

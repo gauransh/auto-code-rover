@@ -68,7 +68,15 @@ def get_args(
 
 
 def main(args, subparser_dest_attr_name: str = "command"):
-
+    subcommand = getattr(args, subparser_dest_attr_name, None)
+    
+    if subcommand in ["extract-patches", "re-extract-patches"]:
+        # Handle these subcommands separately as they don't need all the common options
+        if subcommand == "extract-patches":
+            extract_organize_and_form_input(getattr(args, 'experiment-dir'))
+        else:  # re-extract-patches
+            reextract_organize_and_form_inputs(getattr(args, 'experiment-dir'))
+        return
     ## common options
     globals.output_dir = args.output_dir
     if globals.output_dir is not None:
