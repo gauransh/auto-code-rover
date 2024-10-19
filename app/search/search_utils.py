@@ -174,11 +174,105 @@ def parse_python_file(file_full_path: str) -> tuple[list, dict, list] | None:
             end_lineno = node.end_lineno
             # line numbers are 1-based
             top_level_funcs.append((function_name, start_lineno, end_lineno))
+        function_calls = defaultdict(list)
 
-    return classes, class_to_funcs, top_level_funcs
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                func_name = node.name
+                calls = []
+                for n in ast.walk(node):
+                    if isinstance(n, ast.Call):
+                        if isinstance(n.func, ast.Name):
+                            calls.append(n.func.id)
+                        elif isinstance(n.func, ast.Attribute):
+                            calls.append(n.func.attr)
+                function_calls[func_name].extend(calls)
+        
+        variables = []
 
+        try:
+            file_content = pathlib.Path(file_full_path).read_text()
+            tree = ast.parse(file_content)
+        except Exception:
+            return None
 
-def get_func_snippet_in_class(
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        var_name = target.id
+                        start_lineno = node.lineno
+                        end_lineno = node.end_lineno or node.lineno
+                        variables.append((var_name, file_full_path, LineRange(start_lineno, end_lineno)))
+
+        imports = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                module = getattr(node, 'module', '')
+                names = [alias.name for alias in node.names]
+                start_lineno = node.lineno
+                end_lineno = node.end_lineno or node.lineno
+                imports.append((module, names, file_full_path, LineRange(start_lineno, end_lineno)))
+
+        # (4) get function calls
+        function_calls = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func_name = ''
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    func_name = node.func.attr
+                if func_name:
+                    start_lineno = node.lineno
+                    end_lineno = node.end_lineno or node.lineno
+                    function_calls.append((func_name, file_full_path, LineRange(start_lineno, end_lineno)))
+
+        decorators = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.decorator_list:
+                for decorator in node.decorator_list:
+                    if isinstance(decorator, ast.Name):
+                        decorator_name = decorator.id
+                    elif isinstance(decorator, ast.Attribute):
+                        decorator_name = decorator.attr
+                    else:
+                        continue
+                    target_name = node.name
+                    start_lineno = decorator.lineno
+                    end_lineno = decorator.end_lineno or decorator.lineno
+                    decorators.append((decorator_name, target_name, file_full_path, LineRange(start_lineno, end_lineno)))
+
+        class_bases = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                class_name = node.name
+                bases = []
+                for base in node.bases:
+                    if isinstance(base, ast.Name):
+                        bases.append(base.id)
+                    elif isinstance(base, ast.Attribute):
+                        bases.append(base.attr)
+                class_bases[class_name] = bases
+
+        # Return function_calls along with existing indices
+        docstrings = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.Module)):
+                docstring = ast.get_docstring(node)
+                if docstring:
+                    name = node.name if hasattr(node, 'name') else '<module>'
+                    start_lineno = node.lineno
+                    end_lineno = node.end_lineno or node.lineno
+                    docstrings.append((name, docstring, file_full_path, LineRange(start_lineno, end_lineno)))
+
+        return classes, class_to_funcs, top_level_funcs, variables, imports, decorators, function_calls, class_bases, docstrings
+
+    def get_func_snippet_in_class(
     file_full_path: str, class_name: str, func_name: str, include_lineno=False
 ) -> str | None:
     """Get actual function source code in class.
@@ -326,7 +420,7 @@ def get_code_snippets_with_lineno(file_full_path: str, start: int, end: int) -> 
     return snippet
 
 
-def get_code_snippets(file_full_path: str, start: int, end: int) -> str:
+def get_code_snippets(file_full_path: str, start: int, end: int, context: int = 2) -> str:
     """Get the code snippet in the range in the file, without line numbers.
 
     Args:
@@ -336,9 +430,9 @@ def get_code_snippets(file_full_path: str, start: int, end: int) -> str:
     """
     with open(file_full_path) as f:
         file_content = f.readlines()
-    snippet = ""
-    for i in range(start - 1, end):
-        snippet += file_content[i]
+    snippet_start = max(0, start - 1 - context)
+    snippet_end = min(len(file_content), end + context)
+    snippet = ''.join(file_content[snippet_start:snippet_end])
     return snippet
 
 

@@ -18,21 +18,22 @@ RESULT_SHOW_LIMIT = 3
 class SearchManager:
     def __init__(self, project_path: str):
         self.project_path = project_path
-        # list of all files ending with .py, which are likely not test files
-        # These are all ABSOLUTE paths.
-        self.parsed_files: list[str] = []
-
-        # for file name in the indexes, assume they are absolute path
-        # class name -> [(file_name, line_range)]
+        
+        # All attributes are initialized with their proper types
+        self.parsed_files: List[str] = []  # ABSOLUTE paths of .py files
         self.class_index: ClassIndexType = {}
-
-        # {class_name -> {func_name -> [(file_name, line_range)]}}
-        # inner dict is a list, since we can have (1) overloading func names,
-        # and (2) multiple classes with the same name, having the same method
         self.class_func_index: ClassFuncIndexType = {}
-
-        # function name -> [(file_name, line_range)]
         self.function_index: FuncIndexType = {}
+        self.function_call_index: Dict[str, List[Tuple[str, LineRange]]] = defaultdict(list)
+        self.class_bases: Dict[str, List[str]] = defaultdict(list)
+        self.docstring_index: List[Tuple[str, str, str, LineRange]] = []
+        
+        # New attributes to address potential issues
+        self.variable_index: Dict[str, List[Tuple[str, LineRange]]] = defaultdict(list)
+        self.import_index: List[Tuple[str, List[str], str, LineRange]] = []
+        self.decorator_index: List[Tuple[str, str, str, LineRange]] = []
+
+        # Build the index after initializing all attributes
         self._build_index()
 
     def _build_index(self):
@@ -52,11 +53,27 @@ class SearchManager:
         class_func_index: ClassFuncIndexType,
         function_index: FuncIndexType,
         parsed_files: list[str],
+        variables: List[Tuple[str, str, LineRange]],
+        imports: List[Tuple[str, str, LineRange]],
+        decorators: List[Tuple[str, str, LineRange]],
+        function_calls: List[Tuple[str, str, LineRange]],
+        class_bases: Dict[str, List[str]],
+        docstrings: List[Tuple[str, str, str, LineRange]],
     ) -> None:
         self.class_index.update(class_index)
         self.class_func_index.update(class_func_index)
         self.function_index.update(function_index)
         self.parsed_files.extend(parsed_files)
+        self.docstring_index.extend(docstrings)
+        self.import_index.extend(imports)
+        self.decorator_index.extend(decorators)
+        self.class_bases.update(class_bases)
+
+        for var_name, file_path, line_range in variables:
+            self.variable_index[var_name].append((file_path, line_range))
+
+        for func_name, file_path, line_range in function_calls:
+            self.function_call_index[func_name].append((file_path, line_range))
 
     def _build_python_index(
         self,
@@ -133,7 +150,7 @@ class SearchManager:
         if function_name not in self.class_func_index[class_name]:
             return result
         for fname, (start, end) in self.class_func_index[class_name][function_name]:
-            func_code = search_utils.get_code_snippets(fname, start, end)
+            func_code = search_utils.get_code_snippets(fname, start, end, context=2)
             res = SearchResult(fname, class_name, function_name, func_code)
             result.append(res)
         return result
@@ -165,7 +182,7 @@ class SearchManager:
             return result
 
         for fname, (start, end) in self.function_index[function_name]:
-            func_code = search_utils.get_code_snippets(fname, start, end)
+            func_code = search_utils.get_code_snippets(fname, start, end, context=2)
             res = SearchResult(fname, None, function_name, func_code)
             result.append(res)
         return result
@@ -198,7 +215,7 @@ class SearchManager:
         # class name -> [(file_name, start_line, end_line)]
         search_res: list[SearchResult] = []
         for fname, (start, end) in self.class_index[class_name]:
-            code = search_utils.get_code_snippets(fname, start, end)
+            code = search_utils.get_code_snippets(fname, start, end, context=2)
             res = SearchResult(fname, class_name, None, code)
             search_res.append(res)
 
@@ -268,7 +285,7 @@ class SearchManager:
         search_res: list[SearchResult] = []
         for fname, (start_line, end_line) in self.class_index[class_name]:
             if fname in candidate_py_abs_paths:
-                class_code = search_utils.get_code_snippets(fname, start_line, end_line)
+                class_code = search_utils.get_code_snippets(fname, start_line, end_line, context=2)
                 res = SearchResult(fname, class_name, None, class_code)
                 search_res.append(res)
 
@@ -426,6 +443,37 @@ class SearchManager:
                 tool_output += f"- Search result {idx + 1}:\n```\n{res_str}\n```\n"
         return tool_output, summary, True
 
+    def search_function_calls(self, function_name: str) -> List[SearchResult]:
+        results = []
+        if function_name not in self.function_call_index:
+            return results
+        for file_path, line_range in self.function_call_index[function_name]:
+            code_snippet = search_utils.get_code_snippets(file_path, line_range.start, line_range.end, context=2)
+            class_name, func_name = self.file_line_to_class_and_func(file_path, line_range.start)
+            res = SearchResult(file_path, class_name, func_name, code_snippet)
+            results.append(res)
+        return results
+
+    def search_import(self, module_name: str) -> List[SearchResult]:
+        results = []
+        for module, names, file_path, line_range in self.import_index:
+            if module_name == module or module_name in names:
+                code_snippet = search_utils.get_code_snippets(file_path, line_range.start, line_range.end, context=2)
+                res = SearchResult(file_path, None, None, code_snippet)
+                results.append(res)
+        return results
+
+    def search_variable(self, variable_name: str) -> List[SearchResult]:
+        results = []
+        if variable_name not in self.variable_index:
+            return results
+        for file_path, line_range in self.variable_index[variable_name]:
+            code_snippet = search_utils.get_code_snippets(file_path, line_range.start, line_range.end, context=2)
+            class_name, func_name = self.file_line_to_class_and_func(file_path, line_range.start)
+            res = SearchResult(file_path, class_name, func_name, code_snippet)
+            results.append(res)
+        return results
+
     def search_code_in_file(
         self, code_str: str, file_name: str
     ) -> tuple[str, str, bool]:
@@ -477,4 +525,59 @@ class SearchManager:
     def retrieve_code_snippet(
         self, file_path: str, start_line: int, end_line: int
     ) -> str:
-        return search_utils.get_code_snippets(file_path, start_line, end_line)
+        return search_utils.get_code_snippets(file_path, start_line, end_line, context=2)
+
+    def match_pattern(node: ast.AST, pattern: ast.AST) -> bool:
+        if type(node) != type(pattern):
+            return False
+        for field, value in ast.iter_fields(pattern):
+            node_value = getattr(node, field, None)
+            if isinstance(value, ast.AST):
+                if not match_pattern(node_value, value):
+                    return False
+            elif isinstance(value, list):
+                if len(value) != len(node_value):
+                    return False
+                for v1, v2 in zip(value, node_value):
+                    if not match_pattern(v1, v2):
+                        return False
+            else:
+                if node_value != value:
+                    return False
+        return True
+
+    def search_ast_pattern(self, pattern_code: str) -> List[SearchResult]:
+        pattern_ast = ast.parse(pattern_code)
+        results = []
+        for file_path in self.parsed_files:
+            try:
+                file_content = pathlib.Path(file_path).read_text()
+                tree = ast.parse(file_content)
+            except Exception:
+                continue
+            for node in ast.walk(tree):
+                if match_pattern(node, pattern_ast.body[0]):
+                    start_lineno = node.lineno
+                    end_lineno = node.end_lineno or node.lineno
+                    code_snippet = search_utils.get_code_snippets(file_path, start_lineno, end_lineno, context=2)
+                    class_name, func_name = self.file_line_to_class_and_func(file_path, start_lineno)
+                    res = SearchResult(file_path, class_name, func_name, code_snippet)
+                    results.append(res)
+        return results
+
+    def search_docstrings(self, search_text: str) -> List[SearchResult]:
+        results = []
+        for name, docstring, file_path, line_range in self.docstring_index:
+            if search_text.lower() in docstring.lower():
+                code_snippet = search_utils.get_code_snippets(file_path, line_range.start, line_range.end, context=2)
+                class_name, func_name = self.file_line_to_class_and_func(file_path, line_range.start)
+                res = SearchResult(file_path, class_name, func_name, code_snippet)
+                results.append(res)
+        return results
+
+    def get_subclasses(self, class_name: str) -> List[str]:
+        subclasses = []
+        for subclass, bases in self.class_bases.items():
+            if class_name in bases:
+                subclasses.append(subclass)
+        return subclasses

@@ -87,6 +87,11 @@ def start_conversation_round_stratified(
         "\n- search_method(method_name: str): Search for a method in the entire codebase"
         "\n- search_code(code_str: str): Search for a code snippet in the entire codebase"
         "\n- search_code_in_file(code_str: str, file_path: str): Search for a code snippet in a given file file"
+        "\n- search_ast_pattern(pattern_code: str): Search for an AST pattern in the codebase"
+        "\n- search_docstrings(search_text: str): Search for text in docstrings across the codebase"
+        "\n- search_import(module_name: str): Search for import statements of a specific module"
+        "\n- search_variable(variable_name: str): Search for a variable across the codebase"
+        "\n- search_function_calls(function_name: str): Search for calls to a specific function across the codebase"
         "\n\nNote that you can use multiple search APIs in one round."
         "\n\nNow analyze the issue and select necessary APIs to get more context of the project. Each API call must have concrete arguments as inputs."
     )
@@ -222,23 +227,38 @@ def start_conversation_round_stratified(
         # prepare response from tools
         collated_tool_response = ""
 
+        # Process API calls
         for api_call in json_api_calls:
             func_name, func_args = parse_function_invocation(api_call)
-
-            arg_spec = inspect.getfullargspec(getattr(SearchManager, func_name))
-            arg_names = arg_spec.args[1:]  # first parameter is self
-
-            assert len(func_args) == len(
-                arg_names
-            ), f"Number of argument is wrong in API call: {api_call}"
-
+            
+            # Get the method from SearchManager
+            search_method = getattr(SearchManager, func_name)
+            
+            # Prepare arguments
+            arg_spec = inspect.getfullargspec(search_method)
+            arg_names = arg_spec.args[1:]  # Skip 'self'
             kwargs = dict(zip(arg_names, func_args))
-            intent = FunctionCallIntent(func_name, kwargs, None)
-            tool_output, _, _ = api_manager.dispatch_intent(intent, msg_thread)
+            
+            # Add new attributes to kwargs if they are present in the search_method
+            new_attrs = ['variables', 'imports', 'decorators', 'function_calls', 'class_bases', 'docstrings']
+            for attr in new_attrs:
+                if attr in arg_spec.args:
+                    kwargs[attr] = getattr(api_manager.search_manager, attr, None)
+            
+            # Call the method
+            result = search_method(api_manager.search_manager, **kwargs)
+            
+            # Add result to collated_tool_response
+            collated_tool_response += f"Result of {api_call}:\n\n{result}\n\n"
 
-            collated_tool_response += f"Result of {api_call}:\n\n"
-            collated_tool_response += tool_output + "\n\n"
+        # Process bug locations
+        if buggy_locations:
+            for bug_location in buggy_locations:
+                # Use search_for_bug_location function
+                tool_output, *_ = search_for_bug_location(api_manager, msg_thread, bug_location)
+                collated_tool_response += f"\n\n{tool_output}\n"
 
+        # Add the collated response to the message thread
         msg_thread.add_user(collated_tool_response)
         print_acr(
             collated_tool_response,
@@ -325,52 +345,36 @@ def start_conversation_round_stratified(
     return True
 
 
-def search_for_bug_location(
-    api_manager: ProjectApiManager,
-    msg_thread: MessageThread,
-    bug_location: dict[str, str],
-) -> tuple[str, str, bool]:
-    found = False
-
-    file_name = bug_location.get("file")
-    method_name = bug_location.get("method")
-    class_name = bug_location.get("class")
-
-    assert method_name or class_name, f"Invalid bug location: {bug_location}"
-
-    call_result = None
-
-    def call_function(func_name: str, kwargs: dict[str, str]) -> None:
-        nonlocal found, call_result
-
-        intent = FunctionCallIntent(func_name, kwargs, None)
-        call_result = api_manager.dispatch_intent(intent, msg_thread)
-        _, _, call_is_ok = call_result
-        found |= call_is_ok
-
-    if (not found) and method_name and class_name:
-        kwargs = {"method_name": method_name, "class_name": class_name}
-        call_function("search_method_in_class", kwargs)
-
-    if (not found) and method_name and file_name:
-        kwargs = {"method_name": method_name, "file_name": file_name}
-        call_function("search_method_in_file", kwargs)
-
-    if (not found) and class_name and file_name:
-        kwargs = {"class_name": class_name, "file_name": file_name}
-        call_function("search_class_in_file", kwargs)
-
-    if (not found) and class_name:
-        kwargs = {"class_name": class_name}
-        call_function("get_class_full_snippet", kwargs)
-
-    if (not found) and method_name:
-        kwargs = {"method_name": method_name}
-        call_function("search_method", kwargs)
-
-    assert call_result
-
-    return call_result
+def search_for_bug_location(api_manager: ProjectApiManager, msg_thread: MessageThread, bug_location: dict) -> tuple[str, Any, Any]:
+    file_path = bug_location.get('file')
+    class_name = bug_location.get('class')
+    method_name = bug_location.get('method')
+    pattern_code = bug_location.get('pattern')
+    search_text = bug_location.get('docstring')
+    module_name = bug_location.get('import')
+    variable_name = bug_location.get('variable')
+    function_name = bug_location.get('function_call')
+    
+    if pattern_code:
+        return api_manager.search_manager.search_ast_pattern(pattern_code)
+    elif search_text:
+        return api_manager.search_manager.search_docstrings(search_text)
+    elif module_name:
+        return api_manager.search_manager.search_import(module_name)
+    elif variable_name:
+        return api_manager.search_manager.search_variable(variable_name)
+    elif function_name:
+        return api_manager.search_manager.search_function_calls(function_name)
+    elif class_name and method_name:
+        return api_manager.search_manager.search_method_in_class(method_name, class_name)
+    elif file_path and method_name:
+        return api_manager.search_manager.search_method_in_file(method_name, file_path)
+    elif class_name:
+        return api_manager.search_manager.search_class(class_name)
+    elif method_name:
+        return api_manager.search_manager.search_method(method_name)
+    else:
+        return "Invalid bug location information", None, None
 
 
 def dump_tool_call_layers_to_file(
