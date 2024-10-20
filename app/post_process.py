@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import logging
 from collections import defaultdict
 from collections.abc import Mapping
 from enum import Enum
@@ -15,10 +16,14 @@ from os.path import join as pjoin
 from shutil import move
 
 from app import utils as apputils
-from app.api.patch_utils import apply_edit, parse_edits
+from app.api.patch_utils import parse_edits
 from app.model import common
 import ast
 import difflib
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def count_and_organize_tasks(
@@ -31,7 +36,7 @@ def count_and_organize_tasks(
 
     Args:
         - task_list: a list of task ids
-        - task_list_name: name for this list (one of the four categories)
+        - task_list_name: name for this list (one of the categories)
         - task_exp_names: list of individual experiment result dir names
         - expr_dir: the overall experiment directory.
 
@@ -60,6 +65,7 @@ def count_and_organize_tasks(
 # track status of patch extraction
 class ExtractStatus(str, Enum):
     APPLICABLE_PATCH = "APPLICABLE_PATCH"
+    PARTIALLY_APPLICABLE_PATCH = "PARTIALLY_APPLICABLE_PATCH"
     MATCHED_BUT_EMPTY_ORIGIN = "MATCHED_BUT_EMPTY_ORIGIN"
     MATCHED_BUT_EMPTY_DIFF = "MATCHED_BUT_EMPTY_DIFF"
     RAW_PATCH_BUT_UNMATCHED = "RAW_PATCH_BUT_UNMATCHED"
@@ -67,7 +73,6 @@ class ExtractStatus(str, Enum):
     NO_PATCH = "NO_PATCH"
     IS_VALID_JSON = "IS_VALID_JSON"
     NOT_VALID_JSON = "NOT_VALID_JSON"
-    PARTIALLY_APPLICABLE_PATCH = "PARTIALLY_APPLICABLE_PATCH"
 
     def __lt__(self, other):
         # order from min to max
@@ -199,12 +204,14 @@ def extract_diff_one_instance(
     try:
         edits = parse_edits_with_advanced_parsing(patch_content)
     except Exception as e:
+        logger.error(f"Exception {e} happened when parsing edits.")
         return (
             ExtractStatus.RAW_PATCH_BUT_UNPARSED,
             f"Exception {e} happened when parsing edits.",
         )
 
     if not edits:
+        logger.warning("No edits can be parsed.")
         return ExtractStatus.RAW_PATCH_BUT_UNPARSED, "No edits can be parsed."
 
     # (4) Apply the edits with improved heuristics
@@ -217,7 +224,7 @@ def extract_diff_one_instance(
             # we should not reset to base commit, because previously we created a new commit
             # containing the test_patch content. We should just clean the changes until HEAD.
             apputils.repo_clean_changes()
-        # try to match and apply each edit
+
         unmatched_edit_indexes = []
         partially_matched = False
         for idx, edit in enumerate(edits):
@@ -225,11 +232,15 @@ def extract_diff_one_instance(
             # Advanced file matching
             found_file = find_file_with_advanced_matching(repo_path, target_file)
             if found_file is None:
+                logger.warning(f"File {target_file} not found in repository.")
                 unmatched_edit_indexes.append(idx)
                 continue
             # Try to apply this edit
-            applied_file = apply_edit_with_ast(edit, found_file)
-            if applied_file is None:
+            success = apply_edit_with_improved_matching(edit, found_file)
+            if not success:
+                logger.warning(
+                    f"Failed to apply edit number {idx+1} for file {found_file}."
+                )
                 unmatched_edit_indexes.append(idx)
                 continue
             else:
@@ -292,9 +303,34 @@ def parse_edits_with_advanced_parsing(patch_content: str):
     Parse the patch content using advanced regex and AST parsing.
     """
     # Implement advanced parsing logic here
-    # For simplicity, we use the existing parse_edits function
-    # In practice, you would enhance this function to include advanced regex and AST parsing
-    return parse_edits(patch_content)
+    # Enhanced regex patterns to handle flexible whitespace, indentation, and function definitions
+    edits = []
+
+    # Split the content into edits based on some delimiter or pattern
+    edit_patterns = re.compile(r"Edit\s*\d+:", re.MULTILINE)
+    raw_edits = edit_patterns.split(patch_content)
+
+    for raw_edit in raw_edits:
+        if not raw_edit.strip():
+            continue
+        # Use regex to extract filename, before, and after code blocks
+        filename_match = re.search(r"File\s*:\s*(.*)", raw_edit)
+        before_match = re.search(r"Before\s*:\s*(.*?)\nAfter\s*:", raw_edit, re.DOTALL)
+        after_match = re.search(r"After\s*:\s*(.*)", raw_edit, re.DOTALL)
+
+        if filename_match and before_match and after_match:
+            filename = filename_match.group(1).strip()
+            before = before_match.group(1).strip()
+            after = after_match.group(1).strip()
+
+            # Create an Edit object
+            edit = Edit(filename=filename, before=before, after=after)
+            edits.append(edit)
+        else:
+            # Log unmatched patterns for further analysis
+            logger.debug(f"Unmatched edit pattern in raw edit: {raw_edit}")
+
+    return edits
 
 
 def find_file_with_advanced_matching(repo_path: str, target_file: str) -> str | None:
@@ -319,35 +355,36 @@ def find_file_with_advanced_matching(repo_path: str, target_file: str) -> str | 
     return None
 
 
-def apply_edit_with_ast(edit, found_file):
+def apply_edit_with_improved_matching(edit, found_file):
     """
-    Apply the edit to the file using AST parsing for better matching.
+    Apply the edit to the file using improved regex and AST parsing.
     """
     # Read the original file content
     with open(found_file, 'r') as f:
         original_content = f.read()
 
-    # Attempt to parse both original and edited code into AST
-    try:
-        original_ast = ast.parse(original_content)
-        edit_ast = ast.parse(edit.after)
-    except SyntaxError:
-        return None  # Cannot parse into AST
+    # Flexible whitespace handling
+    before_pattern = re.sub(r'\s+', r'\s+', re.escape(edit.before.strip()))
+    before_regex = re.compile(before_pattern, re.MULTILINE)
 
-    # Use difflib to compare AST dumps
-    original_ast_dump = ast.dump(original_ast)
-    edit_ast_dump = ast.dump(edit_ast)
-    if original_ast_dump == edit_ast_dump:
-        return None  # No changes detected
+    # Attempt to find the before code block in the original content
+    match = before_regex.search(original_content)
+    if not match:
+        logger.debug(f"Original code block not found in {found_file} for edit.")
+        return False
 
-    # Apply the edit (this is a simplified example)
-    patched_content = original_content.replace(edit.before, edit.after)
+    # Prepare the after code block with proper indentation
+    indent = ' ' * (len(match.group(0)) - len(match.group(0).lstrip(' ')))
+    after_code = '\n'.join([indent + line for line in edit.after.strip().split('\n')])
+
+    # Replace the before code block with the after code block
+    patched_content = before_regex.sub(after_code, original_content)
 
     # Write the patched content back to the file
     with open(found_file, 'w') as f:
         f.write(patched_content)
 
-    return found_file
+    return True
 
 
 def is_partial_match(edit, found_file):
@@ -356,10 +393,14 @@ def is_partial_match(edit, found_file):
     """
     # Implement logic to check for partial matches
     # For example, use difflib to compare the before and after snippets
-    ratio = difflib.SequenceMatcher(None, edit.before, edit.after).ratio()
+    with open(found_file, 'r') as f:
+        file_content = f.read()
+
+    ratio_before = difflib.SequenceMatcher(None, edit.before, file_content).quick_ratio()
+    ratio_after = difflib.SequenceMatcher(None, edit.after, file_content).quick_ratio()
     # Define a threshold for partial match
     THRESHOLD = 0.5
-    return ratio < 1.0 and ratio > THRESHOLD
+    return (ratio_before < 1.0 and ratio_before > THRESHOLD) or (ratio_after < 1.0 and ratio_after > THRESHOLD)
 
 
 def organize_experiment_results(expr_dir: str):
@@ -413,6 +454,7 @@ def extract_diffs_and_organize_tasks(expr_dir: str):
         task_id = meta["task_id"]
 
         log_file_handle.write(f"\n\n\nExtracting patch for task {task_id}.\n")
+        logger.info(f"Extracting patch for task {task_id}.")
 
         # (2) find the latest raw patch file
         raw_patch_files = [
@@ -447,6 +489,9 @@ def extract_diffs_and_organize_tasks(expr_dir: str):
 
         log_file_handle.write(
             f"\tPatch extraction status: {ExtractStatus.max(all_status)}\n"
+        )
+        logger.info(
+            f"Patch extraction status for task {task_id}: {ExtractStatus.max(all_status)}"
         )
 
     # Tasks have been categorized, now move them to specific folders based on the result
@@ -577,3 +622,11 @@ def organize_and_form_input(expr_dir):
     organize_experiment_results(expr_dir)
     swe_input_file = extract_swe_bench_input(expr_dir)
     return swe_input_file
+
+
+# Define the Edit class used in parsing
+class Edit:
+    def __init__(self, filename: str, before: str, after: str):
+        self.filename = filename
+        self.before = before
+        self.after = after
