@@ -131,6 +131,11 @@ class ProjectApiManager:
         "search_method_in_file",
         "search_code",
         "search_code_in_file",
+        "search_ast_pattern",
+        "search_docstrings",
+        "search_import",
+        "search_variable",
+        "search_function_calls",
         "write_patch",
     ]
 
@@ -197,8 +202,8 @@ class ProjectApiManager:
         else:
             print_acr("API returned no content for postcondition generation.")
         return ["No valid response from API."]
-
     
+
     def _generate_postcondition(self, description):
         prompt = f"""
         Given the following natural language description of a method:
@@ -272,18 +277,23 @@ class ProjectApiManager:
         }
         return state_machine[self.curr_tool]
 
-    def __init__(self, task: Task, output_dir: str):
-        # for logging of this task instance
-        self.task = task
-
-        # where to write our output
-        self.output_dir = os.path.abspath(output_dir)
-
-        self.task.setup_project()
-        # self.setup_project(self.task)
-
-        # build search manager
-        self.search_manager = SearchManager(self.task.project_path)
+    def __init__(self, python_task: Task, output_dir: str):
+        self.task = python_task
+        self.output_dir = output_dir
+        self.project_path = python_task.project_path
+        self.search_manager = SearchManager(self.project_path)
+        
+        # Initialize all attributes
+        self.search_manager.parsed_files = []
+        self.search_manager.class_index = {}
+        self.search_manager.class_func_index = {}
+        self.search_manager.function_index = {}
+        self.search_manager.function_call_index = defaultdict(list)
+        self.search_manager.class_bases = defaultdict(list)
+        self.search_manager.docstring_index = []
+        self.search_manager.variable_index = defaultdict(list)
+        self.search_manager.import_index = []
+        self.search_manager.decorator_index = []
 
         # keeps track which tools is currently being used
         self.curr_tool: str | None = None
@@ -691,3 +701,70 @@ class ProjectApiManager:
         else:
             summary = "The tool returned the selected search APIs in json format generaetd by another agent."
         return tool_output, summary, new_thread
+
+    def search_ast_pattern(self, pattern_code: str) -> tuple[str, str, bool]:
+        """Search for an AST pattern in the codebase."""
+        results = self.search_manager.search_ast_pattern(pattern_code)
+        
+        tool_output = f"AST pattern '{pattern_code}' matches:\n"
+        for result in results:
+            tool_output += f"File: {result.file_path}\n"
+            tool_output += f"Class: {result.class_name}\n"
+            tool_output += f"Function: {result.function_name}\n"
+            tool_output += f"Code:\n{result.code}\n\n"
+        
+        summary = f"Searched for AST pattern '{pattern_code}' in the codebase."
+        return tool_output, summary, bool(results)
+
+    def search_docstrings(self, search_text: str) -> tuple[str, str, bool]:
+        """Search for text in docstrings across the codebase."""
+        results = self.search_manager.search_docstrings(search_text)
+        
+        tool_output = f"Docstrings containing '{search_text}':\n"
+        for result in results:
+            tool_output += f"File: {result.file_path}\n"
+            tool_output += f"Class/Function: {result.class_name or result.function_name}\n"
+            tool_output += f"Docstring: {result.code}\n\n"
+        
+        summary = f"Searched for '{search_text}' in docstrings across the codebase."
+        return tool_output, summary, bool(results)
+
+    def search_import(self, module_name: str) -> tuple[str, str, bool]:
+        """Search for import statements of a specific module."""
+        results = self.search_manager.search_import(module_name)
+        
+        tool_output = f"Import statements for '{module_name}':\n"
+        for result in results:
+            tool_output += f"File: {result.file_path}\n"
+            tool_output += f"Import statement: {result.code}\n\n"
+        
+        summary = f"Searched for import statements of '{module_name}' across the codebase."
+        return tool_output, summary, bool(results)
+
+    def search_variable(self, variable_name: str) -> tuple[str, str, bool]:
+        """Search for a variable across the codebase."""
+        results = self.search_manager.search_variable(variable_name)
+        
+        tool_output = f"Occurrences of variable '{variable_name}':\n"
+        for result in results:
+            tool_output += f"File: {result.file_path}\n"
+            tool_output += f"Class: {result.class_name}\n"
+            tool_output += f"Function: {result.function_name}\n"
+            tool_output += f"Code:\n{result.code}\n\n"
+        
+        summary = f"Searched for variable '{variable_name}' across the codebase."
+        return tool_output, summary, bool(results)
+
+    def search_function_calls(self, function_name: str) -> tuple[str, str, bool]:
+        """Search for calls to a specific function across the codebase."""
+        results = self.search_manager.search_function_calls(function_name)
+        
+        tool_output = f"Calls to function '{function_name}':\n"
+        for result in results:
+            tool_output += f"File: {result.file_path}\n"
+            tool_output += f"Class: {result.class_name}\n"
+            tool_output += f"Function: {result.function_name}\n"
+            tool_output += f"Code:\n{result.code}\n\n"
+        
+        summary = f"Searched for calls to function '{function_name}' across the codebase."
+        return tool_output, summary, bool(results)

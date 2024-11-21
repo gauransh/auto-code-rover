@@ -30,6 +30,12 @@ search_class_in_file(self, class_name, file_name: str)
 search_class(class_name: str)
 search_code_in_file(code_str: str, file_path: str)
 search_code(code_str: str)
+search_code(code_str: str)
+search_ast_pattern(pattern_code: str)
+search_docstrings(search_text: str)
+search_import(module_name: str)
+search_variable(variable_name: str)
+search_function_calls(function_name: str)
 
 Provide your answer in JSON structure like this. Make sure none of the paths are argument placeholders like path/to/file, but are real paths.
 
@@ -188,6 +194,11 @@ You are a helpful assistant tasked with extracting **API calls**, **bug location
   - `search_class(class_name)`
   - `search_code_in_file(code_str, file_path)`
   - `search_code(code_str)`
+  - `search_ast_pattern(pattern_code)`
+  - `search_docstrings(search_text)`
+  - `search_import(module_name)`
+  - `search_variable(variable_name)`
+  - `search_function_calls(function_name)`
 
 - Format each API call as a valid Python expression **without argument placeholders**.
   - **Correct:** `search_code("example_code")`
