@@ -236,12 +236,14 @@ def get_code_region_containing_code(
     file_content_lines = file_content.splitlines()
     for match in pattern.finditer(file_content):
         matched_start_pos = match.start()
-        # first, find the line number of the matched start position (0-based)
-        matched_line_no = file_content.count("\n", 0, matched_start_pos)
+        # find the line number of the matched start position (1-based to match AST line numbers)
+        matched_line_no = file_content.count("\n", 0, matched_start_pos) + 1
 
-        window_start_index = max(0, matched_line_no - context_size)
+        # Convert to 0-based index for array slicing
+        matched_line_index = matched_line_no - 1
+        window_start_index = max(0, matched_line_index - context_size)
         window_end_index = min(
-            len(file_content_lines), matched_line_no + context_size + 1
+            len(file_content_lines), matched_line_index + context_size + 1
         )
 
         context = "\n".join(file_content_lines[window_start_index:window_end_index])
